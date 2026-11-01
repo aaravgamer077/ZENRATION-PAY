@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.58"
+        android:scaleY="0.58"
+        android:translateX="5.04"
+        android:translateY="5.04">
+        <!-- Bold Z + Lightning Fintech Emblem -->
+        <path
+            android:fillColor="#7C4DFF"
+            android:pathData="M4,4 H20 L13,11 H20 L7,21 L10,13 H4 Z" />
+        <path
+            android:fillColor="#00E5FF"
+            android:pathData="M6,4 H19 L11.5,11.5 H17.5 L8,20 L10.8,12.5 H6 Z" />
+    </group>
+</vector>

@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">ZENRATION PAY</string>
+    <string name="app_tagline">Pay Smart. Live Digital.</string>
+    <string name="continue_with_google">Continue with Google</string>
+    <string name="sign_in_subtitle">Experience next-generation digital payment simulation with real-time cloud sync.</string>
+    <string name="simulated_environment_badge">SANDBOX SIMULATION ENVIRONMENT</string>
+    <string name="demo_balance_label">DEMO BALANCE • NOT REAL BANK MONEY</string>
+    <string name="scan_qr_button">Scan UPI QR</string>
+    <string name="simulated_payment_banner">SIMULATED PAYMENT – NOT PAID</string>
+    <string name="simulated_payment_disclaimer">No actual money was transferred or debited from any bank account. This record is strictly simulated.</string>
+    <string name="fake_button_label">FAKE</string>
+    <string name="status_simulated">SIMULATED</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_scan">Scan</string>
+    <string name="nav_history">History</string>
+    <string name="nav_profile">Profile</string>
+    <string name="logout">Logout</string>
+    <string name="account_settings">Account Settings</string>
+    <string name="transaction_history">Transaction History</string>
+</resources>

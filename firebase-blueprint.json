@@ -1,0 +1,223 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorised administrator record keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified administrator email."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when admin access was granted."
+        }
+      },
+      "required": [
+        "uid",
+        "email"
+      ]
+    },
+    "User": {
+      "title": "User",
+      "description": "Shared User profile document for ZENRATION PAY Android App and Website.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique Firebase Auth UID of the user."
+        },
+        "name": {
+          "type": "string",
+          "description": "Full display name of the user (shared across Website and Android)."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Mirrored display name for Android UI."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Google account email address of the user."
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Profile avatar URL (shared across Website and Android)."
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Mirrored profile avatar URL."
+        },
+        "upiId": {
+          "type": "string",
+          "description": "Generated simulated UPI handle for the user (e.g. name@zenpay.sim)."
+        },
+        "notificationsEnabled": {
+          "type": "boolean",
+          "description": "Whether simulated payment alerts are enabled."
+        },
+        "biometricSimEnabled": {
+          "type": "boolean",
+          "description": "Whether simulated security shield is enabled."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the user profile was created (submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the user profile was last updated (submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "name",
+        "email",
+        "createdAt"
+      ]
+    },
+    "Balance": {
+      "title": "Balance",
+      "description": "Shared demo balance record synchronized in real time between ZENRATION PAY Website and Android App.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique Firebase Auth UID owning this demo balance."
+        },
+        "demoBalance": {
+          "type": "number",
+          "description": "Current simulated demo balance amount (shared canonical field across Website and Android)."
+        },
+        "balance": {
+          "type": "number",
+          "description": "Mirrored simulated demo balance amount."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency code for display (e.g., INR)."
+        },
+        "isDemo": {
+          "type": "boolean",
+          "description": "Always true to indicate this balance is strictly a demo simulation."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the balance record was initialized (submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the balance was last modified (submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "demoBalance",
+        "updatedAt"
+      ]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Shared simulated QR/UPI payment transaction record. Strictly labelled SIMULATED – NOT PAID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user who initiated the simulated transaction (shared canonical field)."
+        },
+        "userId": {
+          "type": "string",
+          "description": "Mirrored Firebase Auth UID of the user."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Simulated payment amount."
+        },
+        "recipientName": {
+          "type": "string",
+          "description": "Display name of the recipient parsed from the UPI QR code."
+        },
+        "recipientUPI": {
+          "type": "string",
+          "description": "UPI ID of the recipient parsed from the UPI QR code (shared canonical field)."
+        },
+        "recipientUpiId": {
+          "type": "string",
+          "description": "Mirrored UPI ID of the recipient."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency code (e.g., INR)."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "SIMULATED",
+            "SIMULATED – NOT PAID"
+          ],
+          "description": "Transaction status, strictly constrained to SIMULATED or SIMULATED – NOT PAID."
+        },
+        "isSimulated": {
+          "type": "boolean",
+          "description": "Always true; confirms no real money was transferred."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional note or remarks for the simulated payment."
+        },
+        "referenceId": {
+          "type": "string",
+          "description": "Unique simulated reference identifier (e.g., SIM-ZEN-84920192)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the simulated payment was recorded (submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "uid",
+        "amount",
+        "recipientName",
+        "recipientUPI",
+        "status",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": {
+        "$ref": "#/entities/Admin"
+      },
+      "description": "Stores authorised administrator UIDs for ZENRATION PAY Admin Website."
+    },
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Stores authenticated user profiles keyed by Firebase Auth UID."
+    },
+    "/balances/{userId}": {
+      "schema": {
+        "$ref": "#/entities/Balance"
+      },
+      "description": "Stores per-user demo balances keyed by Firebase Auth UID, synced in real time between Website and Android App."
+    },
+    "/transactions/{transactionId}": {
+      "schema": {
+        "$ref": "#/entities/Transaction"
+      },
+      "description": "Stores immutable simulated payment transactions scoped by uid."
+    }
+  }
+}

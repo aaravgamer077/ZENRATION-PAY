@@ -1,0 +1,6 @@
+{
+  "name": "ZENRATION PAY",
+  "description": "Pay Smart. Live Digital. A modern fintech payment simulator with QR scanning, demo balance synchronization, and simulated transaction history.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
