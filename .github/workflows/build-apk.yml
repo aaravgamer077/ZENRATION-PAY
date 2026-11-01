@@ -1,4 +1,4 @@
-name: Build Debug APK & Publish GitHub Release
+name: Build ZENRATION PAY Debug APK
 
 on:
   push:
@@ -7,21 +7,25 @@ on:
       - master
     tags:
       - "v*"
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release-apk:
-    name: Build Debug APK & Release
+  build-debug-apk:
+    name: Build & Upload ZENRATION PAY Debug APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 21 (Compatible with AGP 9.1.1 & Gradle 9.3.1)
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
@@ -30,18 +34,24 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses & Install SDK 36.1 Components
+      - name: Install Required Android SDK 36.1 & Build Tools
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
 
-      - name: Set up Gradle 9.3.1
+      - name: Set up Gradle 9.3.1 & Ensure Gradle Wrapper
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
 
-      - name: Prepare Debug Keystore & Environment Config
+      - name: Prepare Gradle Wrapper & Non-Secret Build Environment
         run: |
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 9.3.1
+          fi
+          chmod +x ./gradlew
+
+          # Restore standard Android debug keystore (no private release keys or passwords)
           if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
             base64 --decode debug.keystore.base64 > debug.keystore
           elif [ ! -f "debug.keystore" ]; then
@@ -55,40 +65,54 @@ jobs:
               -validity 10000 \
               -dname "CN=Android Debug,O=Android,C=US"
           fi
+
+          # Ensure default non-secret .env file exists for Secrets Gradle Plugin
           if [ ! -f ".env" ] && [ -f ".env.example" ]; then
             cp .env.example .env
           fi
 
-      - name: Build Debug APK
+      - name: Run Gradle Build Checks & Generate Debug APK
         run: |
-          if [ -x "./gradlew" ]; then
-            ./gradlew :app:assembleDebug --no-daemon --stacktrace
-          else
-            gradle :app:assembleDebug --no-daemon --stacktrace
-          fi
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Verify Built Debug APK
-        id: apk
+      - name: Verify Generated Debug APK
+        id: verify_apk
         run: |
-          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
-          if [ ! -f "$APK_PATH" ]; then
-            APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
-          fi
-          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
-            echo "Error: Debug APK was not found under app/build/outputs/apk/debug/"
+          APK_FILE="app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -f "$APK_FILE" ]; then
+            echo "::error::Expected APK not found at $APK_FILE"
             exit 1
           fi
-          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          APK_SIZE=$(du -h "$APK_FILE" | cut -f1)
+          echo "Successfully built $APK_FILE ($APK_SIZE)"
+          echo "apk_path=$APK_FILE" >> "$GITHUB_OUTPUT"
+          echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Debug APK Artifact
+      - name: Display Build Status Summary
+        if: always()
+        run: |
+          echo "### ZENRATION PAY Android Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Application Name:** ZENRATION PAY" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Application ID:** \`com.aistudio.zenrationpay.kqvzrm\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **AGP / Gradle / JDK:** AGP 9.1.1 / Gradle 9.3.1 / JDK 21" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SDK Configuration:** minSdk 24 / targetSdk 36 / compileSdk 36.1" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "- **Build Status:** ✅ SUCCESS" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Output APK Path:** \`app/build/outputs/apk/debug/app-debug.apk\` (${{ steps.verify_apk.outputs.apk_size }})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- **Build Status:** ❌ FAILED (Check step logs for stacktrace)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Debug APK as GitHub Actions Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: ${{ steps.apk.outputs.apk_path }}
+          name: zenration-pay-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Determine Release Tag & Title
+      - name: Determine Release Tag
+        if: github.event_name != 'pull_request'
         id: release_meta
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -97,19 +121,19 @@ jobs:
             TAG_NAME="v1.0.${GITHUB_RUN_NUMBER}"
           fi
           echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
-          echo "release_name=ZENRATION PAY Debug APK ($TAG_NAME)" >> "$GITHUB_OUTPUT"
 
       - name: Publish Debug APK to GitHub Releases
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_meta.outputs.tag_name }}
-          name: ${{ steps.release_meta.outputs.release_name }}
+          name: "ZENRATION PAY Debug APK (${{ steps.release_meta.outputs.tag_name }})"
           body: |
-            ### ZENRATION PAY – Debug APK Release
-            - **Build Run:** #${{ github.run_number }}
-            - **Commit:** `${{ github.sha }}`
-            - **Download on Android:** Tap `app-debug.apk` under **Assets** below to download and install directly on your phone.
-          files: ${{ steps.apk.outputs.apk_path }}
+            ### ZENRATION PAY – Downloadable Android Debug APK
+            - **Application ID:** `com.aistudio.zenrationpay.kqvzrm`
+            - **Output Path:** `app/build/outputs/apk/debug/app-debug.apk`
+            - **Install on Android Phone:** Download `app-debug.apk` from **Assets** below and open it on your Android device.
+          files: app/build/outputs/apk/debug/app-debug.apk
           draft: false
           prerelease: false
           generate_release_notes: true
