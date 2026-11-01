@@ -1,154 +1,214 @@
-name: Build ZENRATION PAY Debug APK
+name: Build Debug APK & Publish GitHub Release
 
 on:
   push:
     branches:
       - main
-      - master
-    tags:
-      - "v*"
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-debug-apk:
-    name: Build & Upload ZENRATION PAY Debug APK
+  build-apk:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21 (Compatible with AGP 9.1.1 & Gradle 9.3.1)
+      - name: Set up Temurin Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "21"
+          distribution: temurin
+          java-version: "17"
 
-      - name: Configure Pre-Installed Android SDK & Accept Licenses
+      - name: Verify Java environment
         run: |
-          set +e
-          set +o pipefail
-          SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          mkdir -p "$SDK_DIR/licenses"
-
-          # Write official Google Android SDK & Preview license hashes so AGP auto-downloads SDK 36.1
-          printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n" > "$SDK_DIR/licenses/android-sdk-license"
-          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n504667f4c0de7af1a06de9f4b1727b84351f2910\n" > "$SDK_DIR/licenses/android-sdk-preview-license"
-
-          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
-
-          # Also accept any extra licenses via sdkmanager if available
-          SDKMANAGER=$(find "$SDK_DIR" -name "sdkmanager" -type f 2>/dev/null | head -n 1)
-          if [ -n "$SDKMANAGER" ]; then
-            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses > /dev/null 2>&1 || true
+          java -version
+          echo "JAVA_HOME=${JAVA_HOME}"
+          if [ -z "${JAVA_HOME}" ]; then
+            echo "::error::JAVA_HOME is not set."
+            exit 1
           fi
-          exit 0
+          JAVA_VER_OUTPUT=$(java -version 2>&1 | head -n 1)
+          echo "Detected Java version line: ${JAVA_VER_OUTPUT}"
+          JAVA_MAJOR=$(echo "${JAVA_VER_OUTPUT}" | sed -nE 's/.*version "([0-9]+)(\.[0-9]+.*)?".*/\1/p')
+          if [ -z "${JAVA_MAJOR}" ]; then
+            echo "::error::Could not detect active Java major version."
+            exit 1
+          fi
+          echo "Active Java major version: ${JAVA_MAJOR}"
+          if [ "${JAVA_MAJOR}" -lt 17 ]; then
+            echo "::error::Active Java major version (${JAVA_MAJOR}) is lower than 17."
+            exit 1
+          fi
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
 
-      - name: Prepare Gradle Wrapper & Non-Secret Build Environment
+      - name: Create temporary debug keystore
         run: |
-          if [ ! -f "./gradlew" ]; then
-            gradle wrapper --gradle-version 9.3.1
-          fi
-          chmod +x ./gradlew
-
-          # Restore standard Android debug keystore (no private release keys or passwords)
-          if [ -f "debug.keystore.base64" ] && [ ! -f "debug.keystore" ]; then
-            base64 --decode debug.keystore.base64 > debug.keystore
-          elif [ ! -f "debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore debug.keystore \
+          if [ ! -f "./debug.keystore" ]; then
+            "${JAVA_HOME}/bin/keytool" -genkeypair -v \
+              -keystore ./debug.keystore \
               -storepass android \
               -alias androiddebugkey \
               -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
               -keyalg RSA \
               -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+              -validity 10000
           fi
-
-          # Ensure default non-secret .env file exists for Secrets Gradle Plugin
-          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-            cp .env.example .env
-          fi
-
-      - name: Run Gradle Build Checks & Generate Debug APK
-        run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Verify Generated Debug APK
-        id: verify_apk
-        run: |
-          APK_FILE="app/build/outputs/apk/debug/app-debug.apk"
-          if [ ! -f "$APK_FILE" ]; then
-            echo "::error::Expected APK not found at $APK_FILE"
+          if [ ! -f "./debug.keystore" ]; then
+            echo "::error::Failed to create ./debug.keystore"
             exit 1
           fi
-          APK_SIZE=$(du -h "$APK_FILE" | cut -f1)
-          echo "Successfully built $APK_FILE ($APK_SIZE)"
-          echo "apk_path=$APK_FILE" >> "$GITHUB_OUTPUT"
-          echo "apk_size=$APK_SIZE" >> "$GITHUB_OUTPUT"
 
-      - name: Display Build Status Summary
-        if: always()
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Verify debug APK
         run: |
-          echo "### ZENRATION PAY Android Build Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Application Name:** ZENRATION PAY" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Application ID:** \`com.aistudio.zenrationpay.kqvzrm\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **AGP / Gradle / JDK:** AGP 9.1.1 / Gradle 9.3.1 / JDK 21" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **SDK Configuration:** minSdk 24 / targetSdk 36 / compileSdk 36.1" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-            echo "- **Build Status:** ✅ SUCCESS" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Output APK Path:** \`app/build/outputs/apk/debug/app-debug.apk\` (${{ steps.verify_apk.outputs.apk_size }})" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "- **Build Status:** ❌ FAILED (Check step logs for stacktrace)" >> "$GITHUB_STEP_SUMMARY"
+          EXPECTED_APK="app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -e "${EXPECTED_APK}" ]; then
+            echo "::error::Expected debug APK not found at ${EXPECTED_APK}"
+            if [ -d "app/build/outputs/apk" ]; then
+              echo "Discovered APK files inside app/build/outputs/apk:"
+              find app/build/outputs/apk -type f -name "*.apk" || true
+            else
+              echo "Directory app/build/outputs/apk does not exist."
+            fi
+            exit 1
           fi
+          if [ ! -f "${EXPECTED_APK}" ]; then
+            echo "::error::${EXPECTED_APK} is not a regular file."
+            exit 1
+          fi
+          if [ ! -s "${EXPECTED_APK}" ]; then
+            echo "::error::${EXPECTED_APK} is empty."
+            exit 1
+          fi
+          case "${EXPECTED_APK}" in
+            *.apk) ;;
+            *)
+              echo "::error::${EXPECTED_APK} does not have a .apk extension."
+              exit 1
+              ;;
+          esac
+          if [ "${EXPECTED_APK}" != "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "::error::Selected APK path does not match app/build/outputs/apk/debug/app-debug.apk"
+            exit 1
+          fi
+          echo "Verified debug APK: ${EXPECTED_APK}"
 
-      - name: Upload Debug APK as GitHub Actions Artifact
+      - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zenration-pay-debug-apk
+          name: app-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 30
 
-      - name: Determine Release Tag
-        if: github.event_name != 'pull_request'
-        id: release_meta
+      - name: Prepare APK release asset
+        id: prepare_asset
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG_NAME="${GITHUB_REF#refs/tags/}"
-          else
-            TAG_NAME="v1.0.${GITHUB_RUN_NUMBER}"
+          SOURCE_APK="app/build/outputs/apk/debug/app-debug.apk"
+          RAW_REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          SAFE_REPO_NAME=$(printf '%s' "${RAW_REPO_NAME}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')
+          if [ -z "${SAFE_REPO_NAME}" ]; then
+            SAFE_REPO_NAME="android-app"
           fi
-          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          ASSET_FILENAME="${SAFE_REPO_NAME}-debug-build-${GITHUB_RUN_NUMBER}.apk"
+          RELEASE_ASSET_DIR="${RUNNER_TEMP}/release-apk-asset-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "${RELEASE_ASSET_DIR}"
+          ASSET_PATH="${RELEASE_ASSET_DIR}/${ASSET_FILENAME}"
+          cp "${SOURCE_APK}" "${ASSET_PATH}"
+          if [ ! -f "${ASSET_PATH}" ] || [ ! -s "${ASSET_PATH}" ]; then
+            echo "::error::Prepared release asset is missing or empty at ${ASSET_PATH}"
+            exit 1
+          fi
+          echo "asset_path=${ASSET_PATH}" >> "${GITHUB_OUTPUT}"
+          echo "asset_name=${ASSET_FILENAME}" >> "${GITHUB_OUTPUT}"
 
-      - name: Publish Debug APK to GitHub Releases
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_meta.outputs.tag_name }}
-          name: "ZENRATION PAY Debug APK (${{ steps.release_meta.outputs.tag_name }})"
-          body: |
-            ### ZENRATION PAY – Downloadable Android Debug APK
-            - **Application ID:** `com.aistudio.zenrationpay.kqvzrm`
-            - **Output Path:** `app/build/outputs/apk/debug/app-debug.apk`
-            - **Install on Android Phone:** Download `app-debug.apk` from **Assets** below and open it on your Android device.
-          files: app/build/outputs/apk/debug/app-debug.apk
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+      - name: Publish APK to GitHub Releases
+        id: publish_release
+        continue-on-error: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh --version
+          ASSET_PATH="${{ steps.prepare_asset.outputs.asset_path }}"
+          ASSET_NAME="${{ steps.prepare_asset.outputs.asset_name }}"
+          if [ ! -f "${ASSET_PATH}" ] || [ ! -s "${ASSET_PATH}" ]; then
+            echo "::error::Prepared release asset does not exist or is empty: ${ASSET_PATH}"
+            exit 1
+          fi
+          case "${ASSET_PATH}" in
+            *.apk) ;;
+            *)
+              echo "::error::Prepared release asset is not a .apk file: ${ASSET_PATH}"
+              exit 1
+              ;;
+          esac
+          RELEASE_TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          RELEASE_TITLE="Debug APK Build #${GITHUB_RUN_NUMBER}"
+          RELEASE_NOTES=$(cat <<EOF
+          Automatically generated debug APK built by GitHub Actions.
+
+          - **Automatically Generated Debug APK:** Yes
+          - **Built By:** GitHub Actions
+          - **GitHub Actions Run Number:** ${GITHUB_RUN_NUMBER}
+          - **GitHub Actions Run Attempt:** ${GITHUB_RUN_ATTEMPT}
+          - **Source Commit SHA:** ${GITHUB_SHA}
+          - **Intended Purpose:** Testing only
+          - **Production Status:** Not a Play Store production release
+          - **Signing:** Signed only with a temporary debug keystore
+          EOF
+          )
+          gh release create "${RELEASE_TAG}" "${ASSET_PATH}" \
+            --title "${RELEASE_TITLE}" \
+            --target "${GITHUB_SHA}" \
+            --notes "${RELEASE_NOTES}" \
+            --latest
+
+      - name: Report APK download result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_TAG="debug-apk-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          RELEASE_TITLE="Debug APK Build #${GITHUB_RUN_NUMBER}"
+          ASSET_NAME="${{ steps.prepare_asset.outputs.asset_name }}"
+
+          if [ "${{ steps.publish_release.outcome }}" = "success" ] && gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            RELEASE_URL=$(gh release view "${RELEASE_TAG}" --json url --jq '.url')
+            echo "Release Tag: ${RELEASE_TAG}"
+            echo "Release Title: ${RELEASE_TITLE}"
+            echo "Release URL: ${RELEASE_URL}"
+            echo "APK Asset Filename: ${ASSET_NAME}"
+            echo "The APK can be downloaded directly from the release Assets section."
+            echo "The normal GitHub Actions artifact (app-debug-apk) is also available as a backup."
+
+            {
+              echo "### Debug APK Build & Release Summary"
+              echo "- **APK Build & Artifact Upload:** Succeeded"
+              echo "- **GitHub Release Publishing:** Succeeded"
+              echo "- **Release Tag:** \`${RELEASE_TAG}\`"
+              echo "- **Release Title:** ${RELEASE_TITLE}"
+              echo "- **Release Page URL:** ${RELEASE_URL}"
+              echo "- **APK Asset Filename:** \`${ASSET_NAME}\`"
+              echo "- **Download Instructions:** Open the Release Page URL above and download \`${ASSET_NAME}\` directly from the **Assets** section."
+              echo "- **Backup Download:** The normal GitHub Actions artifact named \`app-debug-apk\` is also available on the workflow run summary page."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "::warning::GitHub Release publishing failed. However, the APK build succeeded and the GitHub Actions artifact named 'app-debug-apk' remains available for download."
+
+            {
+              echo "### Debug APK Build & Release Summary"
+              echo "- **APK Build & Artifact Upload:** Succeeded"
+              echo "- **GitHub Release Publishing:** Failed (see step logs for details)"
+              echo "- **Backup Download:** The APK build succeeded and the normal GitHub Actions artifact named \`app-debug-apk\` remains available for download on this workflow run page."
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi

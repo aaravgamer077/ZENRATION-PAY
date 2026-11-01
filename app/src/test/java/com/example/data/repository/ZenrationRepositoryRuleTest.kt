@@ -85,6 +85,15 @@ class ZenrationRepositoryRuleTest : FirestoreEmulatorTestBase() {
       assertNotNull(observedBalance)
       assertEquals(82500.0, observedBalance!!.demoBalance, 0.01)
       assertEquals(82500.0, observedBalance.balance, 0.01)
+
+      // Verify Custom Your Balance Protocol update from Android saves to Firestore and syncs
+      withTimeout(DEFAULT_TIMEOUT_MS) { repository.updateDemoBalance(125000.0).getOrThrow() }
+      val customSyncedBalance =
+        withTimeout(FLOW_TIMEOUT_MS) {
+          repository.observeDemoBalance(uid).first { it != null && it.demoBalance == 125000.0 }
+        }
+      assertNotNull(customSyncedBalance)
+      assertEquals(125000.0, customSyncedBalance!!.demoBalance, 0.01)
     }
 
   @Test

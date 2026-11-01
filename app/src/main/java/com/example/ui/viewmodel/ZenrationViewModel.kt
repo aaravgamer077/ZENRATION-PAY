@@ -81,6 +81,9 @@ class ZenrationViewModel(
   private val _statusBannerMessage = MutableStateFlow<String?>(null)
   val statusBannerMessage: StateFlow<String?> = _statusBannerMessage.asStateFlow()
 
+  private val _isCustomBalanceOpen = MutableStateFlow(false)
+  val isCustomBalanceOpen: StateFlow<Boolean> = _isCustomBalanceOpen.asStateFlow()
+
   val voicePreferences: StateFlow<VoicePreferences> = voiceManager.preferences
   val ttsEngineStatus: StateFlow<TtsEngineStatus> = voiceManager.engineStatus
   val isVoiceSpeaking: StateFlow<Boolean> = voiceManager.isSpeaking
@@ -290,6 +293,40 @@ class ZenrationViewModel(
 
   fun dismissTransactionDetails() {
     _selectedTransactionDetail.value = null
+  }
+
+  fun openCustomBalanceScreen() {
+    _isCustomBalanceOpen.value = true
+  }
+
+  fun closeCustomBalanceScreen() {
+    _isCustomBalanceOpen.value = false
+  }
+
+  fun applyCustomSimulatedBalance(
+    customAmount: Double,
+    onResult: (Result<Double>) -> Unit,
+  ) {
+    viewModelScope.launch {
+      val safeAmount = customAmount.coerceIn(0.0, 1_000_000_000.0)
+      val result = repository.updateDemoBalance(safeAmount)
+      if (result.isSuccess) {
+        showBanner("SIMULATED BALANCE UPDATED SUCCESSFULLY")
+        onResult(Result.success(safeAmount))
+      } else {
+        val fallback = repository.ensureDemoBalanceInitialized(safeAmount)
+        if (fallback.isSuccess) {
+          showBanner("SIMULATED BALANCE UPDATED SUCCESSFULLY")
+          onResult(Result.success(safeAmount))
+        } else {
+          val error =
+            result.exceptionOrNull()
+              ?: fallback.exceptionOrNull()
+              ?: IllegalStateException("Failed to update simulated balance")
+          onResult(Result.failure(error))
+        }
+      }
+    }
   }
 
   fun resetOrTopUpDemoBalance(newAmount: Double) {

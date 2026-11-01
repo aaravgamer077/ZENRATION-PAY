@@ -220,7 +220,7 @@ fun DemoBalanceHeroCard(
   modifier: Modifier = Modifier,
 ) {
   var isBalanceVisible by remember { mutableStateOf(true) }
-  val amount = demoBalance?.balance ?: 25000.0
+  val amount = demoBalance?.demoBalance ?: demoBalance?.balance
 
   Card(
     modifier = modifier.fillMaxWidth().testTag("demo_balance_card"),
@@ -254,7 +254,7 @@ fun DemoBalanceHeroCard(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           SimulatedBadgePill(
-            text = "DEMO BALANCE • NOT REAL MONEY",
+            text = "SIMULATED BALANCE – NOT REAL MONEY",
             accentColor = ZenElectricBlue,
           )
 
@@ -283,14 +283,14 @@ fun DemoBalanceHeroCard(
         ) {
           Column(modifier = Modifier.weight(1f)) {
             Text(
-              text = "Available Sandbox Credits",
+              text = "Available Simulated Balance",
               style = MaterialTheme.typography.bodySmall,
               color = ZenTextSecondary,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
               text =
-                if (isLoading) {
+                if (isLoading || amount == null) {
                   "Syncing..."
                 } else if (isBalanceVisible) {
                   "₹${String.format(Locale.US, "%,.2f", amount)}"

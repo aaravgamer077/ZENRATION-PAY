@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AddCard
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -41,13 +42,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,6 +102,7 @@ fun HomeScreen(
   transactionsState: UiState<List<SimulatedTransaction>>,
   voicePreferences: VoicePreferences,
   onScanQrClick: () -> Unit,
+  onOpenCustomBalanceClick: () -> Unit,
   onOpenVoiceSettingsClick: () -> Unit,
   onTestVoiceQuickClick: (Double) -> Unit,
   onViewAllHistoryClick: () -> Unit,
@@ -109,18 +118,22 @@ fun HomeScreen(
   val profile = (userProfileState as? UiState.Success)?.data
   val balance = (demoBalanceState as? UiState.Success)?.data
   val transactions = (transactionsState as? UiState.Success)?.data.orEmpty()
+  var isTopLeftMenuExpanded by remember { mutableStateOf(false) }
 
-  val displayName = profile?.displayName?.takeIf { it.isNotBlank() } ?: "Digital Pioneer"
+  val displayName =
+    profile?.name?.takeIf { it.isNotBlank() }
+      ?: profile?.displayName?.takeIf { it.isNotBlank() }
+      ?: "Digital Pioneer"
   val userEmail = profile?.email.orEmpty()
   val userUpi = profile?.upiId ?: "pioneer@zenpay.sim"
-  val currentBalanceAmount = balance?.balance ?: 25000.0
+  val currentBalanceAmount = balance?.demoBalance ?: balance?.balance ?: 0.0
 
   LazyColumn(
     modifier = modifier.fillMaxSize().background(ZenBlack).testTag("home_screen_list"),
     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
     verticalArrangement = Arrangement.spacedBy(20.dp),
   ) {
-    // 1. Top Header: ZENRATION PAY Logo + Tagline + User Profile Avatar
+    // 1. Top Header: Three-Dot Menu (⋮) at Top-Left + ZENRATION PAY Logo + User Profile Avatar
     item {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -128,12 +141,66 @@ fun HomeScreen(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          ZenrationLogoEmblem(size = 48.dp)
-          Spacer(modifier = Modifier.width(12.dp))
+          Box {
+            IconButton(
+              onClick = { isTopLeftMenuExpanded = true },
+              modifier =
+                Modifier
+                  .size(48.dp)
+                  .clip(CircleShape)
+                  .background(ZenSurfaceElevated)
+                  .border(1.dp, ZenCardBorder, CircleShape)
+                  .testTag("home_three_dot_menu_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "More Options Menu",
+                tint = ZenElectricBlue,
+              )
+            }
+
+            DropdownMenu(
+              expanded = isTopLeftMenuExpanded,
+              onDismissRequest = { isTopLeftMenuExpanded = false },
+              modifier =
+                Modifier
+                  .background(ZenSurfaceElevated)
+                  .border(1.dp, ZenElectricBlue.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+            ) {
+              DropdownMenuItem(
+                text = {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      imageVector = Icons.Default.AccountBalanceWallet,
+                      contentDescription = null,
+                      tint = ZenElectricBlue,
+                      modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                      text = "Custom Your Balance",
+                      style = MaterialTheme.typography.titleSmall,
+                      color = ZenTextPrimary,
+                      fontWeight = FontWeight.Bold,
+                    )
+                  }
+                },
+                onClick = {
+                  isTopLeftMenuExpanded = false
+                  onOpenCustomBalanceClick()
+                },
+                modifier = Modifier.testTag("menu_option_custom_balance"),
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.width(10.dp))
+          ZenrationLogoEmblem(size = 44.dp)
+          Spacer(modifier = Modifier.width(10.dp))
           Column {
             Text(
               text = stringResource(R.string.app_name),
-              style = MaterialTheme.typography.titleLarge,
+              style = MaterialTheme.typography.titleMedium,
               color = ZenTextPrimary,
               fontWeight = FontWeight.Bold,
             )
@@ -161,7 +228,7 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically,
           ) {
             UserAvatarBadge(
-              photoUrl = profile?.photoUrl,
+              photoUrl = profile?.photoURL ?: profile?.photoUrl,
               displayName = displayName,
               size = 32,
             )

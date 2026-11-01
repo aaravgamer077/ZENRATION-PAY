@@ -66,6 +66,7 @@ import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.authStateFlow
 import com.example.ui.auth.signOut
 import com.example.ui.components.TransactionDetailsModal
+import com.example.ui.screens.CustomBalanceScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ProfileScreen
@@ -145,6 +146,7 @@ fun ZenrationMainShell(currentUserId: String) {
   val paymentFlowState by viewModel.paymentFlowState.collectAsStateWithLifecycle()
   val selectedTxDetail by viewModel.selectedTransactionDetail.collectAsStateWithLifecycle()
   val statusBannerMessage by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
+  val isCustomBalanceOpen by viewModel.isCustomBalanceOpen.collectAsStateWithLifecycle()
 
   val voicePreferences by viewModel.voicePreferences.collectAsStateWithLifecycle()
   val ttsEngineStatus by viewModel.ttsEngineStatus.collectAsStateWithLifecycle()
@@ -164,14 +166,31 @@ fun ZenrationMainShell(currentUserId: String) {
   }
 
   // Handle system back navigation on secondary tabs and sub-states
-  BackHandler(enabled = selectedTab != ZenBottomTab.HOME || selectedTxDetail != null) {
+  BackHandler(
+    enabled =
+      isCustomBalanceOpen || selectedTab != ZenBottomTab.HOME || selectedTxDetail != null
+  ) {
     when {
+      isCustomBalanceOpen -> viewModel.closeCustomBalanceScreen()
       selectedTxDetail != null -> viewModel.dismissTransactionDetails()
       selectedTab == ZenBottomTab.SCAN && paymentFlowState !is PaymentFlowState.IdleScanning -> {
         viewModel.resetScannerToIdle()
       }
       else -> viewModel.selectTab(ZenBottomTab.HOME)
     }
+  }
+
+  if (isCustomBalanceOpen) {
+    val liveBalanceObj = (demoBalanceState as? UiState.Success)?.data
+    val currentLiveBalance = liveBalanceObj?.demoBalance ?: liveBalanceObj?.balance
+    CustomBalanceScreen(
+      currentBalance = currentLiveBalance,
+      onCommitCustomBalance = { customAmt, callback ->
+        viewModel.applyCustomSimulatedBalance(customAmt, callback)
+      },
+      onClose = { viewModel.closeCustomBalanceScreen() },
+    )
+    return
   }
 
   Scaffold(
@@ -200,6 +219,7 @@ fun ZenrationMainShell(currentUserId: String) {
             transactionsState = transactionsState,
             voicePreferences = voicePreferences,
             onScanQrClick = { viewModel.openQrScanner() },
+            onOpenCustomBalanceClick = { viewModel.openCustomBalanceScreen() },
             onOpenVoiceSettingsClick = { viewModel.selectTab(ZenBottomTab.VOICE) },
             onTestVoiceQuickClick = { amt -> viewModel.testVoiceAnnouncement(amt) },
             onViewAllHistoryClick = { viewModel.selectTab(ZenBottomTab.HISTORY) },

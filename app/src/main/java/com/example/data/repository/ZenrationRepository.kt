@@ -256,15 +256,32 @@ class ZenrationRepository(
     val docRef = db.collection("balances").document(uid)
     val safeBalance = newBalance.coerceIn(0.0, 1000000000.0)
     try {
-      docRef
-        .update(
-          mapOf(
-            "demoBalance" to safeBalance,
-            "balance" to safeBalance,
-            "updatedAt" to FieldValue.serverTimestamp(),
+      val existing = docRef.get().await()
+      if (existing.exists()) {
+        docRef
+          .update(
+            mapOf(
+              "demoBalance" to safeBalance,
+              "balance" to safeBalance,
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
           )
-        )
-        .await()
+          .await()
+      } else {
+        docRef
+          .set(
+            mapOf(
+              "userId" to uid,
+              "demoBalance" to safeBalance,
+              "balance" to safeBalance,
+              "currency" to "INR",
+              "isDemo" to true,
+              "createdAt" to FieldValue.serverTimestamp(),
+              "updatedAt" to FieldValue.serverTimestamp(),
+            )
+          )
+          .await()
+      }
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
