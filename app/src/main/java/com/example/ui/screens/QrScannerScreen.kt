@@ -80,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -112,10 +113,13 @@ import java.util.concurrent.Executors
 @Composable
 fun QrScannerScreen(
   paymentFlowState: PaymentFlowState,
+  paymentStyle: com.example.data.model.PaymentStyle = com.example.data.model.PaymentStyle.PAYTM_INSPIRED,
   demoBalance: DemoBalance?,
   onQrDetected: (String) -> Unit,
   onSelectPreset: (UpiQrPayload) -> Unit,
   onSimulatePayment: (UpiQrPayload, String, String) -> Unit,
+  onConfirmDemoPin: () -> Unit = {},
+  onBackFromPin: () -> Unit = {},
   onResetScanner: () -> Unit,
   onFakeReturnHome: () -> Unit,
   modifier: Modifier = Modifier,
@@ -134,6 +138,7 @@ fun QrScannerScreen(
       if (paymentFlowState.previousPayload != null) {
         UpiAmountEntryView(
           payload = paymentFlowState.previousPayload,
+          paymentStyle = paymentStyle,
           demoBalance = demoBalance,
           errorMessage = paymentFlowState.message,
           onBackToScanner = onResetScanner,
@@ -153,10 +158,22 @@ fun QrScannerScreen(
     is PaymentFlowState.EnterAmount -> {
       UpiAmountEntryView(
         payload = paymentFlowState.payload,
+        paymentStyle = paymentStyle,
         demoBalance = demoBalance,
         errorMessage = null,
         onBackToScanner = onResetScanner,
         onSimulatePayment = onSimulatePayment,
+        modifier = modifier,
+      )
+    }
+
+    is PaymentFlowState.EnterDemoPin -> {
+      DemoPinScreen(
+        payload = paymentFlowState.payload,
+        amount = paymentFlowState.amount,
+        paymentStyle = paymentStyle,
+        onConfirmDummyPin = onConfirmDemoPin,
+        onBack = onBackFromPin,
         modifier = modifier,
       )
     }
@@ -496,6 +513,7 @@ private fun CameraQrScannerView(
 @Composable
 private fun UpiAmountEntryView(
   payload: UpiQrPayload,
+  paymentStyle: com.example.data.model.PaymentStyle = com.example.data.model.PaymentStyle.PAYTM_INSPIRED,
   demoBalance: DemoBalance?,
   errorMessage: String?,
   onBackToScanner: () -> Unit,
@@ -504,6 +522,13 @@ private fun UpiAmountEntryView(
 ) {
   var amountText by remember(payload) { mutableStateOf(payload.amount) }
   var noteText by remember(payload) { mutableStateOf(payload.note) }
+
+  val accentColor =
+    if (paymentStyle == com.example.data.model.PaymentStyle.PAYTM_INSPIRED) {
+      Color(0xFF00E5FF)
+    } else {
+      Color(0xFFB388FF)
+    }
 
   Column(
     modifier =
@@ -530,25 +555,25 @@ private fun UpiAmountEntryView(
       ) {
         Icon(
           imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-          contentDescription = "Back to QR scanner",
+          contentDescription = "Back",
           tint = ZenTextPrimary,
         )
       }
 
       SimulatedBadgePill(
-        text = "SIMULATED UPI PAYMENT",
+        text = "SIMULATED – NOT PAID",
         accentColor = ZenSimAmber,
       )
     }
 
     Spacer(modifier = Modifier.height(20.dp))
 
-    // Verified Recipient Card
+    // 7. AMOUNT ENTRY SCREEN - Verified Recipient Card (Name + Mobile Number + UPI ID)
     Card(
       modifier = Modifier.fillMaxWidth(),
       shape = RoundedCornerShape(24.dp),
       colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
-      border = BorderStroke(1.2.dp, ZenElectricBlue.copy(alpha = 0.5f)),
+      border = BorderStroke(1.2.dp, accentColor.copy(alpha = 0.6f)),
     ) {
       Column(
         modifier = Modifier.fillMaxWidth().padding(20.dp),
@@ -560,7 +585,7 @@ private fun UpiAmountEntryView(
               .size(56.dp)
               .clip(CircleShape)
               .background(
-                brush = Brush.linearGradient(colors = listOf(ZenDeepPurple, ZenElectricBlue))
+                brush = Brush.linearGradient(colors = listOf(ZenDeepPurple, accentColor))
               ),
           contentAlignment = Alignment.Center,
         ) {
@@ -585,8 +610,8 @@ private fun UpiAmountEntryView(
           Spacer(modifier = Modifier.width(6.dp))
           Icon(
             imageVector = Icons.Default.Verified,
-            contentDescription = "Parsed UPI QR recipient",
-            tint = ZenElectricBlue,
+            contentDescription = "Recipient",
+            tint = accentColor,
             modifier = Modifier.size(18.dp),
           )
         }
@@ -594,8 +619,18 @@ private fun UpiAmountEntryView(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-          text = "UPI ID: ${payload.recipientUpiId}",
+          text = "Mobile: ${payload.recipientMobile}",
           style = MaterialTheme.typography.bodyMedium,
+          color = accentColor,
+          fontWeight = FontWeight.SemiBold,
+          modifier = Modifier.testTag("parsed_recipient_mobile"),
+        )
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        Text(
+          text = "UPI ID: ${payload.recipientUpiId}",
+          style = MaterialTheme.typography.bodySmall,
           color = ZenPurpleGlow,
           modifier = Modifier.testTag("parsed_recipient_upi_id"),
         )
@@ -650,7 +685,7 @@ private fun UpiAmountEntryView(
             Text(
               text = "₹ ",
               style = MaterialTheme.typography.headlineLarge,
-              color = ZenElectricBlue,
+              color = accentColor,
               fontWeight = FontWeight.Bold,
             )
           },
@@ -672,7 +707,7 @@ private fun UpiAmountEntryView(
           shape = RoundedCornerShape(18.dp),
           colors =
             OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = ZenElectricBlue,
+              focusedBorderColor = accentColor,
               unfocusedBorderColor = ZenCardBorder,
             ),
         )
@@ -684,7 +719,7 @@ private fun UpiAmountEntryView(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          listOf("100", "250", "500", "2000").forEach { presetAmt ->
+          listOf("50", "150", "500", "2000").forEach { presetAmt ->
             Surface(
               modifier =
                 Modifier
@@ -698,7 +733,7 @@ private fun UpiAmountEntryView(
               Text(
                 text = "₹$presetAmt",
                 style = MaterialTheme.typography.labelMedium,
-                color = ZenElectricBlue,
+                color = accentColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(vertical = 8.dp),
               )
@@ -728,7 +763,7 @@ private fun UpiAmountEntryView(
 
         Text(
           text =
-            "Available Demo Balance: ₹${String.format(Locale.US, "%,.2f", demoBalance?.balance ?: 25000.0)} (NOT REAL MONEY)",
+            "Available Simulated Balance: ₹${String.format(Locale.US, "%,.2f", demoBalance?.balance ?: 25000.0)} (SIMULATED BALANCE – NOT REAL MONEY)",
           style = MaterialTheme.typography.bodySmall,
           color = ZenTextMuted,
         )
@@ -755,16 +790,22 @@ private fun UpiAmountEntryView(
             .background(
               brush =
                 Brush.horizontalGradient(
-                  colors = listOf(ZenDeepPurple, ZenRoyalPurple, ZenElectricBlue)
+                  colors =
+                    if (paymentStyle == com.example.data.model.PaymentStyle.PAYTM_INSPIRED) {
+                      listOf(Color(0xFF002E6E), Color(0xFF0078D7), Color(0xFF00B9F1))
+                    } else {
+                      listOf(ZenDeepPurple, ZenRoyalPurple, ZenElectricBlue)
+                    }
                 ),
               shape = RoundedCornerShape(18.dp),
             ),
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "SIMULATE PAYMENT (NO REAL CHARGE)",
+          text = "CONTINUE",
           style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
+          fontWeight = FontWeight.ExtraBold,
+          letterSpacing = 1.4.sp,
           color = ZenTextPrimary,
         )
       }
@@ -784,7 +825,7 @@ private fun UpiAmountEntryView(
       )
       Spacer(modifier = Modifier.width(6.dp))
       Text(
-        text = "Do not initiate real UPI transactions • Sandbox Simulation Only",
+        text = "Next step: 6-digit Dummy PIN • Sandbox Simulation Only",
         style = MaterialTheme.typography.bodySmall,
         color = ZenTextSecondary,
       )

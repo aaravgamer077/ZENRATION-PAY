@@ -9,9 +9,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +43,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,16 +54,21 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.model.PaymentStyle
 import com.example.data.model.SimulatedTransaction
 import com.example.data.model.UpiQrPayload
 import com.example.ui.components.SimulatedBadgePill
+import com.example.ui.components.ZenrationLogoEmblem
 import com.example.ui.components.formatTransactionTimestamp
 import com.example.ui.theme.ZenBlack
 import com.example.ui.theme.ZenCardBorder
@@ -67,10 +78,19 @@ import com.example.ui.theme.ZenPurpleGlow
 import com.example.ui.theme.ZenRoyalPurple
 import com.example.ui.theme.ZenSimAmber
 import com.example.ui.theme.ZenSurfaceDark
+import com.example.ui.theme.ZenSurfaceElevated
 import com.example.ui.theme.ZenTextMuted
 import com.example.ui.theme.ZenTextPrimary
 import com.example.ui.theme.ZenTextSecondary
 import java.util.Locale
+
+private val PaytmDeepBlue = Color(0xFF002E6E)
+private val PaytmElectricCyan = Color(0xFF00B9F1)
+private val PaytmLightCyan = Color(0xFF00E5FF)
+
+private val PhonePeDeepPurple = Color(0xFF3B0A75)
+private val PhonePeRichPurple = Color(0xFF5F259F)
+private val PhonePeLightViolet = Color(0xFFB388FF)
 
 @Composable
 fun PaymentProcessingContent(
@@ -195,7 +215,7 @@ fun PaymentProcessingContent(
       )
 
       Text(
-        text = payload.recipientUpiId,
+        text = "${payload.recipientMobile} • ${payload.recipientUpiId}",
         style = MaterialTheme.typography.bodySmall,
         color = ZenPurpleGlow,
       )
@@ -220,12 +240,12 @@ fun PaymentProcessingContent(
 }
 
 /**
- * Simulated Payment Success Screen:
- * - Clearly displays "SIMULATED PAYMENT – NOT PAID"
- * - Displays the automatic Voice Announcement badge with the exact spoken phrase
- * - Never claims real money was transferred
- * - Includes a button labelled "FAKE" returning to the Home screen,
- *   positioned approximately 10 mm (~63.dp on 160dpi baseline) above the bottom navigation bar.
+ * 9 & 10. PAYMENT RESULT SCREEN – PAYTM STYLE & PHONEPE STYLE
+ * - Supports both PAYTM-INSPIRED (Blue & Light-Cyan) and PHONEPE-INSPIRED (Purple) result designs
+ * - Features original ZENRATION PAY branding
+ * - Features a clearly visible diagonal & badge SIMULATED watermark
+ * - Clearly labels Status: SIMULATED – NOT PAID
+ * - Displays the automatic Hindi Voice Announcement banner ("<amount> rupaye ki simulated payment hui.")
  */
 @Composable
 fun SimulatedPaymentSuccessContent(
@@ -234,233 +254,492 @@ fun SimulatedPaymentSuccessContent(
   onFakeReturnHomeClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Column(
+  var activeResultStyle by remember(transaction.paymentStyle) {
+    mutableStateOf(PaymentStyle.fromId(transaction.paymentStyle))
+  }
+
+  val isPaytm = activeResultStyle == PaymentStyle.PAYTM_INSPIRED
+  val primaryAccent = if (isPaytm) PaytmLightCyan else PhonePeLightViolet
+  val secondaryAccent = if (isPaytm) PaytmElectricCyan else PhonePeRichPurple
+  val headerGradient =
+    if (isPaytm) {
+      listOf(PaytmDeepBlue, Color(0xFF00529B), PaytmElectricCyan)
+    } else {
+      listOf(PhonePeDeepPurple, PhonePeRichPurple, Color(0xFF7C4DFF))
+    }
+
+  Box(
     modifier =
       modifier
         .fillMaxSize()
-        .background(ZenBlack)
-        .padding(horizontal = 20.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
+        .background(
+          brush =
+            Brush.verticalGradient(
+              colors =
+                if (isPaytm) {
+                  listOf(Color(0xFF021329), ZenBlack, Color(0xFF021022))
+                } else {
+                  listOf(Color(0xFF1A0633), ZenBlack, Color(0xFF120424))
+                }
+            )
+        )
+        .testTag("simulated_result_screen")
   ) {
-    // Scrollable upper receipt area
+    // Clearly visible full-screen diagonal "SIMULATED – NOT PAID" Watermark
+    SimulatedWatermarkOverlay(
+      watermarkColor = primaryAccent.copy(alpha = 0.08f),
+      modifier = Modifier.fillMaxSize(),
+    )
+
     Column(
       modifier =
         Modifier
-          .weight(1f)
-          .fillMaxWidth()
-          .verticalScroll(rememberScrollState())
-          .padding(top = 14.dp),
+          .fillMaxSize()
+          .padding(horizontal = 20.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      // Prominent "SIMULATED PAYMENT – NOT PAID" Banner
-      Surface(
-        modifier = Modifier.fillMaxWidth().testTag("simulated_payment_not_paid_banner"),
-        shape = RoundedCornerShape(18.dp),
-        color = ZenSimAmber.copy(alpha = 0.16f),
-        border = BorderStroke(1.5.dp, ZenSimAmber),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.Center,
-        ) {
-          Icon(
-            imageVector = Icons.Default.WarningAmber,
-            contentDescription = null,
-            tint = ZenSimAmber,
-            modifier = Modifier.size(24.dp),
-          )
-          Spacer(modifier = Modifier.width(10.dp))
-          Text(
-            text = stringResource(R.string.simulated_payment_banner),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.ExtraBold,
-            color = ZenSimAmber,
-            textAlign = TextAlign.Center,
-          )
-        }
-      }
-
-      Spacer(modifier = Modifier.height(16.dp))
-
-      // Animated Simulated Checkmark Medallion
-      Box(
+      Column(
         modifier =
           Modifier
-            .size(72.dp)
-            .clip(CircleShape)
-            .background(
-              brush =
-                Brush.linearGradient(
-                  colors = listOf(ZenDeepPurple, ZenElectricBlue)
-                )
-            ),
-        contentAlignment = Alignment.Center,
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(top = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Icon(
-          imageVector = Icons.Default.CheckCircle,
-          contentDescription = "Simulation completed",
-          tint = ZenBlack,
-          modifier = Modifier.size(42.dp),
-        )
-      }
-
-      Spacer(modifier = Modifier.height(12.dp))
-
-      Text(
-        text = "₹${String.format(Locale.US, "%,.2f", transaction.amount)}",
-        style = MaterialTheme.typography.displayMedium,
-        color = ZenTextPrimary,
-        fontWeight = FontWeight.Bold,
-      )
-
-      Spacer(modifier = Modifier.height(6.dp))
-
-      SimulatedBadgePill(
-        text = "STATUS: SIMULATED • NOT PAID",
-        accentColor = ZenElectricBlue,
-      )
-
-      // Voice Announcement Confirmation Strip
-      if (!announcedSentence.isNullOrBlank()) {
-        Spacer(modifier = Modifier.height(12.dp))
-        Surface(
-          modifier = Modifier.fillMaxWidth().testTag("voice_announcement_banner"),
-          shape = RoundedCornerShape(14.dp),
-          color = ZenElectricBlue.copy(alpha = 0.12f),
-          border = BorderStroke(1.dp, ZenElectricBlue.copy(alpha = 0.45f)),
+        // Style Toggle Row + ZENRATION PAY Branding Header
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-              contentDescription = "Voice announcement played",
-              tint = ZenElectricBlue,
-              modifier = Modifier.size(20.dp),
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            ZenrationLogoEmblem(size = 38.dp)
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
               Text(
-                text = "ZEN SOUNDBOX VOICE ANNOUNCEMENT:",
-                style = MaterialTheme.typography.labelSmall,
-                color = ZenElectricBlue,
+                text = "ZENRATION PAY",
+                style = MaterialTheme.typography.titleSmall,
+                color = ZenTextPrimary,
+                fontWeight = FontWeight.ExtraBold,
               )
               Text(
-                text = "\"$announcedSentence\"",
-                style = MaterialTheme.typography.bodySmall,
-                color = ZenTextPrimary,
-                fontWeight = FontWeight.SemiBold,
+                text =
+                  if (isPaytm) {
+                    "PAYTM-INSPIRED SIMULATOR"
+                  } else {
+                    "PHONEPE-INSPIRED SIMULATOR"
+                  },
+                style = MaterialTheme.typography.labelSmall,
+                color = primaryAccent,
+                fontWeight = FontWeight.Bold,
+              )
+            }
+          }
+
+          // Switch between Paytm Style & PhonePe Style Result View
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Surface(
+              modifier =
+                Modifier
+                  .clip(RoundedCornerShape(50))
+                  .clickable { activeResultStyle = PaymentStyle.PAYTM_INSPIRED }
+                  .testTag("result_style_paytm_toggle"),
+              shape = RoundedCornerShape(50),
+              color =
+                if (isPaytm) PaytmElectricCyan.copy(alpha = 0.28f) else ZenSurfaceElevated,
+              border =
+                BorderStroke(
+                  1.dp,
+                  if (isPaytm) PaytmLightCyan else ZenCardBorder,
+                ),
+            ) {
+              Text(
+                text = "Paytm Style",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isPaytm) PaytmLightCyan else ZenTextSecondary,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+              )
+            }
+
+            Surface(
+              modifier =
+                Modifier
+                  .clip(RoundedCornerShape(50))
+                  .clickable { activeResultStyle = PaymentStyle.PHONEPE_INSPIRED }
+                  .testTag("result_style_phonepe_toggle"),
+              shape = RoundedCornerShape(50),
+              color =
+                if (!isPaytm) PhonePeRichPurple.copy(alpha = 0.35f) else ZenSurfaceElevated,
+              border =
+                BorderStroke(
+                  1.dp,
+                  if (!isPaytm) PhonePeLightViolet else ZenCardBorder,
+                ),
+            ) {
+              Text(
+                text = "PhonePe Style",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (!isPaytm) PhonePeLightViolet else ZenTextSecondary,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
               )
             }
           }
         }
-      }
 
-      Spacer(modifier = Modifier.height(14.dp))
-
-      // Simulated Receipt Breakdown Card
-      Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
-        border = BorderStroke(1.dp, ZenCardBorder),
-      ) {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(18.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+        // Prominent "SIMULATED – NOT PAID" Banner
+        Surface(
+          modifier = Modifier.fillMaxWidth().testTag("simulated_payment_not_paid_banner"),
+          shape = RoundedCornerShape(16.dp),
+          color = ZenSimAmber.copy(alpha = 0.16f),
+          border = BorderStroke(1.5.dp, ZenSimAmber),
         ) {
-          ReceiptFieldRow(label = "Recipient Name", value = transaction.recipientName)
-          ReceiptFieldRow(label = "Recipient UPI ID", value = transaction.recipientUpiId)
-          HorizontalDivider(color = ZenCardBorder.copy(alpha = 0.6f))
-          ReceiptFieldRow(
-            label = "Payment Status",
-            value = "SIMULATED PAYMENT – NOT PAID",
-            valueColor = ZenSimAmber,
-          )
-          ReceiptFieldRow(
-            label = "Simulation Ref",
-            value = transaction.referenceId.ifBlank { transaction.id },
-          )
-          ReceiptFieldRow(
-            label = "Date & Time",
-            value = formatTransactionTimestamp(transaction.createdAt),
-          )
-          if (!transaction.note.isNullOrBlank()) {
-            ReceiptFieldRow(label = "Note", value = transaction.note)
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Default.WarningAmber,
+              contentDescription = null,
+              tint = ZenSimAmber,
+              modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = "STATUS: SIMULATED – NOT PAID (DEMO ONLY)",
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.ExtraBold,
+              color = ZenSimAmber,
+              textAlign = TextAlign.Center,
+            )
           }
         }
+
+        // Main Hero Result Card (Paytm Blue/Cyan or PhonePe Purple)
+        Card(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(26.dp),
+          colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
+          border = BorderStroke(1.8.dp, primaryAccent.copy(alpha = 0.75f)),
+        ) {
+          Box(modifier = Modifier.fillMaxWidth()) {
+            // Card-level visible SIMULATED watermark pill
+            Surface(
+              modifier =
+                Modifier
+                  .align(Alignment.TopEnd)
+                  .padding(14.dp)
+                  .testTag("simulated_watermark_badge"),
+              shape = RoundedCornerShape(8.dp),
+              color = ZenSimAmber.copy(alpha = 0.18f),
+              border = BorderStroke(1.dp, ZenSimAmber),
+            ) {
+              Text(
+                text = "SIMULATED WATERMARK",
+                style =
+                  MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.ExtraBold,
+                  ),
+                color = ZenSimAmber,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              )
+            }
+
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              // Colored Top Banner inside Result Card
+              Box(
+                modifier =
+                  Modifier
+                    .fillMaxWidth()
+                    .background(brush = Brush.horizontalGradient(colors = headerGradient))
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  Box(
+                    modifier =
+                      Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.28f))
+                        .border(2.dp, primaryAccent, CircleShape),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.CheckCircle,
+                      contentDescription = "Simulation Completed",
+                      tint = primaryAccent,
+                      modifier = Modifier.size(36.dp),
+                    )
+                  }
+
+                  Text(
+                    text =
+                      if (isPaytm) {
+                        "ZENRATION PAY • PAYTM-STYLE SIMULATION"
+                      } else {
+                        "ZENRATION PAY • PHONEPE-STYLE SIMULATION"
+                      },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontWeight = FontWeight.Bold,
+                  )
+
+                  Text(
+                    text = "₹${String.format(Locale.US, "%,.2f", transaction.amount)}",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.ExtraBold,
+                  )
+
+                  SimulatedBadgePill(
+                    text = "SIMULATED – NOT PAID",
+                    accentColor = ZenSimAmber,
+                  )
+                }
+              }
+
+              // Detailed Fields for Paytm-Style vs PhonePe-Style
+              Column(
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                if (isPaytm) {
+                  // 9. PAYMENT RESULT SCREEN – PAYTM STYLE
+                  ReceiptFieldRow(
+                    label = "Platform Branding",
+                    value = "ZENRATION PAY (Paytm-Inspired)",
+                    valueColor = PaytmLightCyan,
+                  )
+                  ReceiptFieldRow(
+                    label = "Recipient Name",
+                    value = transaction.recipientName,
+                  )
+                  ReceiptFieldRow(
+                    label = "Recipient Mobile Number",
+                    value = transaction.recipientMobile,
+                    valueColor = PaytmLightCyan,
+                  )
+                  ReceiptFieldRow(
+                    label = "Amount Entered",
+                    value = "₹${String.format(Locale.US, "%,.2f", transaction.amount)} (SIMULATED)",
+                  )
+                  HorizontalDivider(color = ZenCardBorder.copy(alpha = 0.6f))
+                  ReceiptFieldRow(
+                    label = "Unique DEMO Transaction ID",
+                    value = transaction.referenceId.ifBlank { transaction.id },
+                    valueColor = PaytmLightCyan,
+                  )
+                  ReceiptFieldRow(
+                    label = "Date & Time",
+                    value = formatTransactionTimestamp(transaction.createdAt),
+                  )
+                  ReceiptFieldRow(
+                    label = "Status",
+                    value = "SIMULATED – NOT PAID",
+                    valueColor = ZenSimAmber,
+                  )
+                } else {
+                  // 10. PAYMENT RESULT SCREEN – PHONEPE STYLE
+                  ReceiptFieldRow(
+                    label = "Platform Branding",
+                    value = "ZENRATION PAY (PhonePe-Inspired)",
+                    valueColor = PhonePeLightViolet,
+                  )
+                  ReceiptFieldRow(
+                    label = "Transaction ID",
+                    value = transaction.referenceId.ifBlank { transaction.id },
+                    valueColor = PhonePeLightViolet,
+                  )
+                  ReceiptFieldRow(
+                    label = "Paid To (Simulated)",
+                    value = transaction.recipientName,
+                  )
+                  ReceiptFieldRow(
+                    label = "Recipient Mobile Number",
+                    value = transaction.recipientMobile,
+                    valueColor = PhonePeLightViolet,
+                  )
+                  ReceiptFieldRow(
+                    label = "Simulated Amount",
+                    value = "₹${String.format(Locale.US, "%,.2f", transaction.amount)}",
+                  )
+                  HorizontalDivider(color = ZenCardBorder.copy(alpha = 0.6f))
+                  ReceiptFieldRow(
+                    label = "Simulated Sender Details",
+                    value = "${transaction.senderName} (${transaction.senderUpiId})",
+                  )
+                  ReceiptFieldRow(
+                    label = "Date & Time",
+                    value = formatTransactionTimestamp(transaction.createdAt),
+                  )
+                  ReceiptFieldRow(
+                    label = "Status",
+                    value = "SIMULATED – NOT PAID",
+                    valueColor = ZenSimAmber,
+                  )
+                }
+
+                if (!transaction.note.isNullOrBlank()) {
+                  ReceiptFieldRow(label = "Note", value = transaction.note)
+                }
+              }
+            }
+          }
+        }
+
+        // Dynamic Voice Announcement Banner
+        if (!announcedSentence.isNullOrBlank()) {
+          Surface(
+            modifier = Modifier.fillMaxWidth().testTag("voice_announcement_banner"),
+            shape = RoundedCornerShape(14.dp),
+            color = secondaryAccent.copy(alpha = 0.14f),
+            border = BorderStroke(1.dp, primaryAccent.copy(alpha = 0.55f)),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = "Voice announcement played",
+                tint = primaryAccent,
+                modifier = Modifier.size(20.dp),
+              )
+              Spacer(modifier = Modifier.width(10.dp))
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = "DYNAMIC HINDI VOICE ANNOUNCEMENT:",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = primaryAccent,
+                  fontWeight = FontWeight.Bold,
+                )
+                Text(
+                  text = "\"$announcedSentence\"",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = ZenTextPrimary,
+                  fontWeight = FontWeight.SemiBold,
+                )
+              }
+            }
+          }
+        }
+
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(14.dp),
+          color = ZenSurfaceDark,
+          border = BorderStroke(1.dp, ZenCardBorder),
+        ) {
+          Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Icon(
+              imageVector = Icons.Default.Shield,
+              contentDescription = null,
+              tint = primaryAccent,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = stringResource(R.string.simulated_payment_disclaimer),
+              style = MaterialTheme.typography.bodySmall,
+              color = ZenTextSecondary,
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
       }
 
-      Spacer(modifier = Modifier.height(10.dp))
-
-      Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = ZenDeepPurple.copy(alpha = 0.16f),
-        border = BorderStroke(1.dp, ZenRoyalPurple.copy(alpha = 0.4f)),
+      // Return to Home button
+      Button(
+        onClick = onFakeReturnHomeClick,
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .testTag("fake_return_home_button"),
+        shape = RoundedCornerShape(18.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+        contentPadding = PaddingValues(),
       ) {
-        Row(
-          modifier = Modifier.padding(12.dp),
-          verticalAlignment = Alignment.CenterVertically,
+        Box(
+          modifier =
+            Modifier
+              .fillMaxSize()
+              .background(
+                brush = Brush.horizontalGradient(colors = headerGradient),
+                shape = RoundedCornerShape(18.dp),
+              ),
+          contentAlignment = Alignment.Center,
         ) {
-          Icon(
-            imageVector = Icons.Default.Shield,
-            contentDescription = null,
-            tint = ZenElectricBlue,
-            modifier = Modifier.size(18.dp),
-          )
-          Spacer(modifier = Modifier.width(8.dp))
           Text(
-            text = stringResource(R.string.simulated_payment_disclaimer),
-            style = MaterialTheme.typography.bodySmall,
-            color = ZenTextSecondary,
+            text = "${stringResource(R.string.fake_button_label)} • DONE (SIMULATED)",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 1.5.sp,
+            color = Color.White,
           )
         }
       }
 
-      Spacer(modifier = Modifier.height(14.dp))
+      Spacer(modifier = Modifier.height(63.dp))
     }
+  }
+}
 
-    // Button labelled "FAKE" that returns to the home screen,
-    // positioned approximately 10 mm (~63.dp on 160dpi baseline) above the bottom navigation bar.
-    Button(
-      onClick = onFakeReturnHomeClick,
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .height(56.dp)
-          .testTag("fake_return_home_button"),
-      shape = RoundedCornerShape(18.dp),
-      colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
-      contentPadding = androidx.compose.foundation.layout.PaddingValues(),
-    ) {
-      Box(
-        modifier =
-          Modifier
-            .fillMaxSize()
-            .background(
-              brush =
-                Brush.horizontalGradient(
-                  colors = listOf(ZenDeepPurple, ZenRoyalPurple, ZenElectricBlue)
-                ),
-              shape = RoundedCornerShape(18.dp),
-            ),
-        contentAlignment = Alignment.Center,
-      ) {
-        Text(
-          text = stringResource(R.string.fake_button_label),
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.ExtraBold,
-          letterSpacing = 2.sp,
-          color = ZenTextPrimary,
-        )
+@Composable
+private fun SimulatedWatermarkOverlay(
+  watermarkColor: Color,
+  modifier: Modifier = Modifier,
+) {
+  Canvas(modifier = modifier) {
+    val paint =
+      android.graphics.Paint().apply {
+        isAntiAlias = true
+        typeface = android.graphics.Typeface.MONOSPACE
+        isFakeBoldText = true
+        textSize = 42f
+        color =
+          android.graphics.Color.argb(
+            (watermarkColor.alpha * 255).toInt().coerceIn(12, 60),
+            (watermarkColor.red * 255).toInt(),
+            (watermarkColor.green * 255).toInt(),
+            (watermarkColor.blue * 255).toInt(),
+          )
+      }
+
+    rotate(degrees = -26f) {
+      val stepY = 180f
+      val stepX = 460f
+      var y = -200f
+      while (y < size.height + 400f) {
+        var x = -300f
+        while (x < size.width + 400f) {
+          drawContext.canvas.nativeCanvas.drawText(
+            "SIMULATED – NOT PAID",
+            x,
+            y,
+            paint,
+          )
+          x += stepX
+        }
+        y += stepY
       }
     }
-
-    // 10 mm spacer (~63.dp) directly above the bottom navigation bar
-    Spacer(modifier = Modifier.height(63.dp))
   }
 }
 
@@ -479,7 +758,7 @@ private fun ReceiptFieldRow(
       text = label,
       style = MaterialTheme.typography.bodySmall,
       color = ZenTextMuted,
-      modifier = Modifier.weight(0.4f),
+      modifier = Modifier.weight(0.42f),
     )
     Text(
       text = value,
@@ -487,7 +766,7 @@ private fun ReceiptFieldRow(
       fontWeight = FontWeight.SemiBold,
       color = valueColor,
       textAlign = TextAlign.End,
-      modifier = Modifier.weight(0.6f),
+      modifier = Modifier.weight(0.58f),
     )
   }
 }

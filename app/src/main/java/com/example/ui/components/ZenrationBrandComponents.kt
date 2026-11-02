@@ -190,7 +190,7 @@ fun SimulatedBadgePill(
     border = BorderStroke(1.dp, accentColor.copy(alpha = 0.55f)),
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+      modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.Center,
     ) {
@@ -201,12 +201,14 @@ fun SimulatedBadgePill(
             .clip(CircleShape)
             .background(accentColor)
       )
-      Spacer(modifier = Modifier.width(6.dp))
+      Spacer(modifier = Modifier.width(5.dp))
       Text(
         text = text,
-        style = MaterialTheme.typography.labelSmall,
+        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
         color = accentColor,
         fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
       )
     }
   }
@@ -251,26 +253,39 @@ fun DemoBalanceHeroCard(
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
+          verticalAlignment = Alignment.Top,
         ) {
           SimulatedBadgePill(
             text = "SIMULATED BALANCE – NOT REAL MONEY",
             accentColor = ZenElectricBlue,
+            modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
           )
 
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              imageVector = Icons.Default.CloudDone,
-              contentDescription = "Real-time cloud sync active",
-              tint = ZenSuccessGreen,
-              modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-              text = "LIVE SYNC",
-              style = MaterialTheme.typography.labelSmall,
-              color = ZenSuccessGreen,
-            )
+          Surface(
+            shape = RoundedCornerShape(50),
+            color = ZenSuccessGreen.copy(alpha = 0.14f),
+            border = BorderStroke(1.dp, ZenSuccessGreen.copy(alpha = 0.5f)),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Icon(
+                imageVector = Icons.Default.CloudDone,
+                contentDescription = "Real-time cloud sync active",
+                tint = ZenSuccessGreen,
+                modifier = Modifier.size(14.dp),
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                text = "LIVE SYNC",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                color = ZenSuccessGreen,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+              )
+            }
           }
         }
 
@@ -436,7 +451,7 @@ fun TransactionItemCard(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-          text = transaction.recipientUpiId,
+          text = "${transaction.recipientMobile} • ${transaction.recipientUpiId}",
           style = MaterialTheme.typography.bodySmall,
           color = ZenPurpleGlow,
           maxLines = 1,
@@ -444,9 +459,12 @@ fun TransactionItemCard(
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-          text = formatTransactionTimestamp(transaction.createdAt),
+          text =
+            "${formatTransactionTimestamp(transaction.createdAt)} • ${transaction.referenceId.ifBlank { transaction.id }}",
           style = MaterialTheme.typography.bodySmall,
           color = ZenTextMuted,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
         )
       }
 
@@ -461,7 +479,7 @@ fun TransactionItemCard(
         )
         Spacer(modifier = Modifier.height(6.dp))
         SimulatedBadgePill(
-          text = "SIMULATED",
+          text = "SIMULATED – NOT PAID",
           accentColor = ZenSimAmber,
         )
       }
@@ -498,7 +516,7 @@ fun TransactionDetailsModal(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         SimulatedBadgePill(
-          text = "SIMULATED PAYMENT – NOT PAID",
+          text = "SIMULATED – NOT PAID",
           accentColor = ZenSimAmber,
         )
         IconButton(onClick = onDismiss) {
@@ -529,7 +547,7 @@ fun TransactionDetailsModal(
       )
 
       Text(
-        text = transaction.recipientUpiId,
+        text = "${transaction.recipientMobile} • ${transaction.recipientUpiId}",
         style = MaterialTheme.typography.bodyMedium,
         color = ZenPurpleGlow,
       )
@@ -546,10 +564,12 @@ fun TransactionDetailsModal(
           modifier = Modifier.padding(18.dp),
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          DetailRow(label = "Status", value = "SIMULATED (NOT PAID)", valueColor = ZenSimAmber)
-          DetailRow(label = "Reference ID", value = transaction.referenceId.ifBlank { transaction.id })
+          DetailRow(label = "Simulation Status", value = "SIMULATED – NOT PAID", valueColor = ZenSimAmber)
+          DetailRow(label = "Transaction ID", value = transaction.referenceId.ifBlank { transaction.id })
           DetailRow(label = "Recipient Name", value = transaction.recipientName)
+          DetailRow(label = "Recipient Mobile", value = transaction.recipientMobile)
           DetailRow(label = "Recipient UPI ID", value = transaction.recipientUpiId)
+          DetailRow(label = "Simulated Sender", value = "${transaction.senderName} (${transaction.senderUpiId})")
           DetailRow(
             label = "Date & Time",
             value = formatTransactionTimestamp(transaction.createdAt),

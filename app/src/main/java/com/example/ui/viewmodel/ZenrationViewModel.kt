@@ -4,11 +4,13 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.DemoBalance
+import com.example.data.model.PaymentStyle
 import com.example.data.model.SimulatedTransaction
 import com.example.data.model.UpiQrParser
 import com.example.data.model.UpiQrPayload
 import com.example.data.model.UserProfile
 import com.example.data.repository.ZenrationRepository
+import com.example.ui.screens.RecipientSearchMode
 import com.example.voice.TtsEngineStatus
 import com.example.voice.VoiceAnnouncementManager
 import com.example.voice.VoiceLanguage
@@ -37,6 +39,12 @@ sealed interface PaymentFlowState {
   data object IdleScanning : PaymentFlowState
 
   data class EnterAmount(val payload: UpiQrPayload) : PaymentFlowState
+
+  data class EnterDemoPin(
+    val payload: UpiQrPayload,
+    val amount: Double,
+    val note: String,
+  ) : PaymentFlowState
 
   data class Processing(
     val payload: UpiQrPayload,
@@ -70,6 +78,15 @@ class ZenrationViewModel(
 
   private val _selectedTab = MutableStateFlow(ZenBottomTab.HOME)
   val selectedTab: StateFlow<ZenBottomTab> = _selectedTab.asStateFlow()
+
+  private val _paymentStyle = MutableStateFlow(repository.getSavedPaymentStyle())
+  val paymentStyle: StateFlow<PaymentStyle> = _paymentStyle.asStateFlow()
+
+  private val _isStyleSelectorOpen = MutableStateFlow(false)
+  val isStyleSelectorOpen: StateFlow<Boolean> = _isStyleSelectorOpen.asStateFlow()
+
+  private val _recipientSearchMode = MutableStateFlow<RecipientSearchMode?>(null)
+  val recipientSearchMode: StateFlow<RecipientSearchMode?> = _recipientSearchMode.asStateFlow()
 
   private val _paymentFlowState = MutableStateFlow<PaymentFlowState>(PaymentFlowState.IdleScanning)
   val paymentFlowState: StateFlow<PaymentFlowState> = _paymentFlowState.asStateFlow()
@@ -137,12 +154,14 @@ class ZenrationViewModel(
 
   private fun bootstrapUserAndBalance() {
     viewModelScope.launch {
+      val remembered = repository.getRememberedUsername()
       val firebaseUser = Firebase.auth.currentUser
       val displayName =
-        firebaseUser?.displayName?.takeIf { it.isNotBlank() }
+        remembered.takeIf { it.isNotBlank() }
+          ?: firebaseUser?.displayName?.takeIf { it.isNotBlank() }
           ?: firebaseUser?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
-          ?: "Zenration Member"
-      val email = firebaseUser?.email ?: "member@zenrationpay.sim"
+          ?: "Zenration Player"
+      val email = firebaseUser?.email ?: "player@zenrationpay.sim"
       val photoUrl = firebaseUser?.photoUrl?.toString()
 
       repository.ensureOrUpdateUserProfile(
@@ -154,6 +173,36 @@ class ZenrationViewModel(
     }
   }
 
+  fun getRememberedUsername(): String = repository.getRememberedUsername()
+
+  fun completeOwnerLoginAndStyle(username: String, style: PaymentStyle) {
+    repository.saveRememberedUsername(username)
+    setPaymentStyle(style)
+    _isStyleSelectorOpen.value = false
+  }
+
+  fun setPaymentStyle(style: PaymentStyle) {
+    _paymentStyle.value = style
+    repository.savePaymentStyle(style)
+    showBanner("Switched to ${style.title} simulator interface.")
+  }
+
+  fun openStyleSelector() {
+    _isStyleSelectorOpen.value = true
+  }
+
+  fun closeStyleSelector() {
+    _isStyleSelectorOpen.value = false
+  }
+
+  fun openRecipientSearch(mode: RecipientSearchMode = RecipientSearchMode.ALL) {
+    _recipientSearchMode.value = mode
+  }
+
+  fun closeRecipientSearch() {
+    _recipientSearchMode.value = null
+  }
+
   fun selectTab(tab: ZenBottomTab) {
     _selectedTab.value = tab
     if (tab != ZenBottomTab.SCAN && _paymentFlowState.value is PaymentFlowState.SimulatedSuccess) {
@@ -162,6 +211,7 @@ class ZenrationViewModel(
   }
 
   fun openQrScanner() {
+    _recipientSearchMode.value = null
     _paymentFlowState.value = PaymentFlowState.IdleScanning
     _selectedTab.value = ZenBottomTab.SCAN
   }
@@ -175,12 +225,13 @@ class ZenrationViewModel(
       _paymentFlowState.value =
         PaymentFlowState.Error(
           message =
-            "Unrecognized UPI QR format. Expected standard UPI URI (upi://pay?pa=...) or valid UPI ID (name@bank)."
+            "Unrecognized UPI QR format. Expected standard UPI URI (upi://pay?pa=...), mobile number, or valid UPI ID (name@bank)."
         )
     }
   }
 
   fun onSelectPresetMerchant(payload: UpiQrPayload) {
+    _recipientSearchMode.value = null
     _paymentFlowState.value = PaymentFlowState.EnterAmount(payload)
     _selectedTab.value = ZenBottomTab.SCAN
   }
@@ -189,45 +240,115 @@ class ZenrationViewModel(
     _paymentFlowState.value = PaymentFlowState.IdleScanning
   }
 
+  fun returnFromPinToAmountEntry() {
+    val current = _paymentFlowState.value
+    if (current is PaymentFlowState.EnterDemoPin) {
+      _paymentFlowState.value =
+        PaymentFlowState.EnterAmount(
+          current.payload.copy(
+            amount =
+              if (current.amount % 1.0 == 0.0) {
+                current.amount.toLong().toString()
+              } else {
+                current.amount.toString()
+              },
+            note = current.note,
+          )
+        )
+    } else {
+      _paymentFlowState.value = PaymentFlowState.IdleScanning
+    }
+  }
+
+  /**
+   * Validates that amount > 0 on the Amount Entry Screen and transitions to the 6-digit Demo PIN Screen.
+   */
+  fun proceedToDemoPin(
+    payload: UpiQrPayload,
+    amountInput: String,
+    noteInput: String,
+  ) {
+    val sanitized = amountInput.replace(",", "").replace("₹", "").trim()
+    val amount = sanitized.toDoubleOrNull()
+    if (amount == null || amount <= 0.0 || amount > 10000000.0) {
+      _paymentFlowState.value =
+        PaymentFlowState.Error(
+          message = "Please enter a valid simulation amount greater than ₹0 (up to ₹1,00,00,000).",
+          previousPayload = payload,
+        )
+      return
+    }
+    _paymentFlowState.value =
+      PaymentFlowState.EnterDemoPin(
+        payload = payload,
+        amount = amount,
+        note = noteInput.trim(),
+      )
+  }
+
+  fun confirmDemoPinAndSimulate() {
+    val current = _paymentFlowState.value as? PaymentFlowState.EnterDemoPin ?: return
+    executeSimulatedTransaction(
+      payload = current.payload,
+      amount = current.amount,
+      note = current.note,
+      deductFromBalance = true,
+    )
+  }
+
   fun simulatePayment(
     payload: UpiQrPayload,
     amountInput: String,
     noteInput: String,
     deductFromBalance: Boolean = true,
   ) {
-    val amount = amountInput.trim().toDoubleOrNull()
+    val sanitized = amountInput.replace(",", "").replace("₹", "").trim()
+    val amount = sanitized.toDoubleOrNull()
     if (amount == null || amount <= 0.0 || amount > 10000000.0) {
       _paymentFlowState.value =
         PaymentFlowState.Error(
-          message = "Please enter a valid simulation amount between ₹1 and ₹1,00,00,000.",
+          message = "Please enter a valid simulation amount greater than ₹0 (up to ₹1,00,00,000).",
           previousPayload = payload,
         )
       return
     }
+    executeSimulatedTransaction(
+      payload = payload,
+      amount = amount,
+      note = noteInput.trim(),
+      deductFromBalance = deductFromBalance,
+    )
+  }
 
+  private fun executeSimulatedTransaction(
+    payload: UpiQrPayload,
+    amount: Double,
+    note: String,
+    deductFromBalance: Boolean,
+  ) {
     viewModelScope.launch {
       _paymentFlowState.value =
         PaymentFlowState.Processing(
           payload = payload,
           amount = amount,
-          note = noteInput.trim(),
-          stageMessage = "Verifying UPI QR Parameters...",
+          note = note,
+          stageMessage = "Verifying Dummy PIN & Recipient Parameters...",
         )
-      delay(500L)
+      delay(450L)
       _paymentFlowState.value =
         PaymentFlowState.Processing(
           payload = payload,
           amount = amount,
-          note = noteInput.trim(),
+          note = note,
           stageMessage = "Simulating Encrypted Sandbox Ledger...",
         )
-      delay(550L)
+      delay(450L)
       _paymentFlowState.value =
         PaymentFlowState.Processing(
           payload = payload,
           amount = amount,
-          note = noteInput.trim(),
-          stageMessage = "Recording SIMULATED Entry in Cloud Firestore...",
+          note = note,
+          stageMessage = "Saving SIMULATED – NOT PAID Entry...",
         )
 
       val result =
@@ -235,15 +356,17 @@ class ZenrationViewModel(
           recipientName = payload.recipientName,
           recipientUpiId = payload.recipientUpiId,
           amount = amount,
-          note = noteInput.trim().ifBlank { null },
+          note = note.ifBlank { null },
           deductFromDemoBalance = deductFromBalance,
+          recipientMobile = payload.recipientMobile,
+          paymentStyle = _paymentStyle.value,
         )
-      delay(300L)
+      delay(250L)
 
       result
         .onSuccess { simulatedTx ->
           val uniqueKey = simulatedTx.id.ifBlank { simulatedTx.referenceId }
-          // Automatically announce exact amount entered by user ONCE per transaction
+          // Automatically announce exact amount entered by player ONCE per transaction
           val spokenSentence = voiceManager.announceTransactionOnce(uniqueKey, simulatedTx.amount)
           _paymentFlowState.value =
             PaymentFlowState.SimulatedSuccess(
@@ -311,12 +434,12 @@ class ZenrationViewModel(
       val safeAmount = customAmount.coerceIn(0.0, 1_000_000_000.0)
       val result = repository.updateDemoBalance(safeAmount)
       if (result.isSuccess) {
-        showBanner("SIMULATED BALANCE UPDATED SUCCESSFULLY")
+        showBanner("SIMULATED BALANCE UPDATED SUCCESSFULLY.")
         onResult(Result.success(safeAmount))
       } else {
         val fallback = repository.ensureDemoBalanceInitialized(safeAmount)
         if (fallback.isSuccess) {
-          showBanner("SIMULATED BALANCE UPDATED SUCCESSFULLY")
+          showBanner("SIMULATED BALANCE UPDATED SUCCESSFULLY.")
           onResult(Result.success(safeAmount))
         } else {
           val error =
@@ -356,7 +479,7 @@ class ZenrationViewModel(
           biometricSimEnabled = biometricSimEnabled,
         )
       if (result.isSuccess) {
-        showBanner("Account settings saved to Firestore.")
+        showBanner("Account settings saved.")
       } else {
         showBanner("Could not update settings: ${result.exceptionOrNull()?.localizedMessage}")
       }

@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -43,8 +44,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,26 +58,26 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.data.model.PaymentStyle
 import com.example.data.repository.ZenrationRepository
-import com.example.ui.auth.AuthScreen
+import com.example.ui.auth.PaymentStyleSelectionScreen
+import com.example.ui.auth.ZenOwnerLoginAndStyleFlow
 import com.example.ui.auth.authStateFlow
-import com.example.ui.auth.signOut
 import com.example.ui.components.TransactionDetailsModal
 import com.example.ui.screens.CustomBalanceScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.QrScannerScreen
+import com.example.ui.screens.RecipientSearchScreen
 import com.example.ui.screens.VoiceSettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.ZenBlack
-import com.example.ui.theme.ZenCardBorder
 import com.example.ui.theme.ZenDeepPurple
 import com.example.ui.theme.ZenElectricBlue
 import com.example.ui.theme.ZenRoyalPurple
@@ -91,9 +94,6 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -108,14 +108,56 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
+  val context = LocalContext.current
+  val prefs = remember(context) {
+    context.applicationContext.getSharedPreferences(
+      "zenration_local_sandbox_prefs",
+      Context.MODE_PRIVATE,
+    )
+  }
+  val rememberedUsername = remember(prefs) {
+    prefs.getString("remembered_username", "")?.trim().orEmpty()
+  }
+
+  var isOwnerSessionUnlocked by rememberSaveable { mutableStateOf(false) }
+
   val flowUser by
     auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
   val activeUserId = flowUser?.uid ?: ZenrationRepository.DEFAULT_LOCAL_UID
-  ZenrationMainShell(currentUserId = activeUserId)
+
+  if (!isOwnerSessionUnlocked) {
+    ZenOwnerLoginAndStyleFlow(
+      initialUsername = rememberedUsername,
+      onCompleted = { verifiedUsername, selectedStyle ->
+        val handle =
+          verifiedUsername
+            .lowercase()
+            .replace(Regex("[^a-z0-9]"), "")
+            .ifBlank { "player" }
+        prefs
+          .edit()
+          .putString("remembered_username", verifiedUsername)
+          .putString("profile_name", verifiedUsername)
+          .putString("profile_email", "$handle@zenrationpay.sim")
+          .putString("profile_upi", "$handle@zenpay.sim")
+          .putString("selected_payment_style", selectedStyle.id)
+          .apply()
+        isOwnerSessionUnlocked = true
+      },
+    )
+  } else {
+    ZenrationMainShell(
+      currentUserId = activeUserId,
+      onLockSession = { isOwnerSessionUnlocked = false },
+    )
+  }
 }
 
 @Composable
-fun ZenrationMainShell(currentUserId: String) {
+fun ZenrationMainShell(
+  currentUserId: String,
+  onLockSession: () -> Unit = {},
+) {
   val viewModel: ZenrationViewModel =
     viewModel(
       key = currentUserId,
@@ -143,6 +185,9 @@ fun ZenrationMainShell(currentUserId: String) {
     )
 
   val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+  val paymentStyle by viewModel.paymentStyle.collectAsStateWithLifecycle()
+  val isStyleSelectorOpen by viewModel.isStyleSelectorOpen.collectAsStateWithLifecycle()
+  val recipientSearchMode by viewModel.recipientSearchMode.collectAsStateWithLifecycle()
   val userProfileState by viewModel.userProfileState.collectAsStateWithLifecycle()
   val demoBalanceState by viewModel.demoBalanceState.collectAsStateWithLifecycle()
   val transactionsState by viewModel.transactionsState.collectAsStateWithLifecycle()
@@ -156,9 +201,6 @@ fun ZenrationMainShell(currentUserId: String) {
   val isVoiceSpeaking by viewModel.isVoiceSpeaking.collectAsStateWithLifecycle()
   val lastSpokenText by viewModel.lastSpokenText.collectAsStateWithLifecycle()
 
-  val context = LocalContext.current
-  val coroutineScope = rememberCoroutineScope()
-  val credentialManager = remember(context) { CredentialManager.create(context) }
   val snackbarHostState = remember { SnackbarHostState() }
 
   LaunchedEffect(statusBannerMessage) {
@@ -171,11 +213,20 @@ fun ZenrationMainShell(currentUserId: String) {
   // Handle system back navigation on secondary tabs and sub-states
   BackHandler(
     enabled =
-      isCustomBalanceOpen || selectedTab != ZenBottomTab.HOME || selectedTxDetail != null
+      isCustomBalanceOpen ||
+        isStyleSelectorOpen ||
+        recipientSearchMode != null ||
+        selectedTab != ZenBottomTab.HOME ||
+        selectedTxDetail != null
   ) {
     when {
       isCustomBalanceOpen -> viewModel.closeCustomBalanceScreen()
+      isStyleSelectorOpen -> viewModel.closeStyleSelector()
+      recipientSearchMode != null -> viewModel.closeRecipientSearch()
       selectedTxDetail != null -> viewModel.dismissTransactionDetails()
+      selectedTab == ZenBottomTab.SCAN && paymentFlowState is PaymentFlowState.EnterDemoPin -> {
+        viewModel.returnFromPinToAmountEntry()
+      }
       selectedTab == ZenBottomTab.SCAN && paymentFlowState !is PaymentFlowState.IdleScanning -> {
         viewModel.resetScannerToIdle()
       }
@@ -196,6 +247,31 @@ fun ZenrationMainShell(currentUserId: String) {
     return
   }
 
+  if (isStyleSelectorOpen) {
+    val profile = (userProfileState as? UiState.Success)?.data
+    PaymentStyleSelectionScreen(
+      username = profile?.name?.ifBlank { "Zenration Player" } ?: "Zenration Player",
+      onSelectStyle = { style ->
+        viewModel.setPaymentStyle(style)
+        viewModel.closeStyleSelector()
+      },
+    )
+    return
+  }
+
+  val activeSearchMode = recipientSearchMode
+  if (activeSearchMode != null) {
+    RecipientSearchScreen(
+      paymentStyle = paymentStyle,
+      initialMode = activeSearchMode,
+      onRecipientSelected = { payload ->
+        viewModel.onSelectPresetMerchant(payload)
+      },
+      onClose = { viewModel.closeRecipientSearch() },
+    )
+    return
+  }
+
   Scaffold(
     modifier = Modifier.fillMaxSize(),
     containerColor = ZenBlack,
@@ -203,6 +279,7 @@ fun ZenrationMainShell(currentUserId: String) {
     bottomBar = {
       ZenrationCenteredScannerBottomBar(
         selectedTab = selectedTab,
+        paymentStyle = paymentStyle,
         onSelectTab = { tab ->
           if (tab == ZenBottomTab.SCAN) {
             viewModel.openQrScanner()
@@ -221,6 +298,10 @@ fun ZenrationMainShell(currentUserId: String) {
             demoBalanceState = demoBalanceState,
             transactionsState = transactionsState,
             voicePreferences = voicePreferences,
+            paymentStyle = paymentStyle,
+            onSelectPaymentStyle = { style -> viewModel.setPaymentStyle(style) },
+            onOpenStyleSelectorClick = { viewModel.openStyleSelector() },
+            onOpenRecipientSearchClick = { mode -> viewModel.openRecipientSearch(mode) },
             onScanQrClick = { viewModel.openQrScanner() },
             onOpenCustomBalanceClick = { viewModel.openCustomBalanceScreen() },
             onOpenVoiceSettingsClick = { viewModel.selectTab(ZenBottomTab.VOICE) },
@@ -239,12 +320,15 @@ fun ZenrationMainShell(currentUserId: String) {
           val balance = (demoBalanceState as? UiState.Success)?.data
           QrScannerScreen(
             paymentFlowState = paymentFlowState,
+            paymentStyle = paymentStyle,
             demoBalance = balance,
             onQrDetected = { rawQr -> viewModel.onQrCodeDetected(rawQr) },
             onSelectPreset = { preset -> viewModel.onSelectPresetMerchant(preset) },
             onSimulatePayment = { payload, amt, note ->
-              viewModel.simulatePayment(payload, amt, note)
+              viewModel.proceedToDemoPin(payload, amt, note)
             },
+            onConfirmDemoPin = { viewModel.confirmDemoPinAndSimulate() },
+            onBackFromPin = { viewModel.returnFromPinToAmountEntry() },
             onResetScanner = { viewModel.resetScannerToIdle() },
             onFakeReturnHome = { viewModel.onFakeButtonReturnHome() },
           )
@@ -283,8 +367,7 @@ fun ZenrationMainShell(currentUserId: String) {
             },
             onAdjustDemoBalance = { newAmt -> viewModel.resetOrTopUpDemoBalance(newAmt) },
             onLogoutClick = {
-              viewModel.resetOrTopUpDemoBalance(25000.0)
-              viewModel.selectTab(ZenBottomTab.HOME)
+              onLockSession()
             },
           )
         }
@@ -307,8 +390,16 @@ fun ZenrationMainShell(currentUserId: String) {
 @Composable
 private fun ZenrationCenteredScannerBottomBar(
   selectedTab: ZenBottomTab,
+  paymentStyle: PaymentStyle,
   onSelectTab: (ZenBottomTab) -> Unit,
 ) {
+  val accentColor =
+    if (paymentStyle == PaymentStyle.PAYTM_INSPIRED) {
+      Color(0xFF00E5FF)
+    } else {
+      Color(0xFFB388FF)
+    }
+
   Surface(
     color = ZenSurfaceDark,
     tonalElevation = 10.dp,
@@ -329,6 +420,7 @@ private fun ZenrationCenteredScannerBottomBar(
         selected = selectedTab == ZenBottomTab.HOME,
         selectedIcon = Icons.Filled.Home,
         unselectedIcon = Icons.Outlined.Home,
+        accentColor = accentColor,
         onClick = { onSelectTab(ZenBottomTab.HOME) },
         testTag = "bottom_nav_home",
         modifier = Modifier.weight(1f),
@@ -340,6 +432,7 @@ private fun ZenrationCenteredScannerBottomBar(
         selected = selectedTab == ZenBottomTab.HISTORY,
         selectedIcon = Icons.Filled.History,
         unselectedIcon = Icons.Outlined.History,
+        accentColor = accentColor,
         onClick = { onSelectTab(ZenBottomTab.HISTORY) },
         testTag = "bottom_nav_history",
         modifier = Modifier.weight(1f),
@@ -365,17 +458,16 @@ private fun ZenrationCenteredScannerBottomBar(
                 brush =
                   Brush.linearGradient(
                     colors =
-                      if (selectedTab == ZenBottomTab.SCAN) {
-                        listOf(ZenElectricBlue, ZenRoyalPurple)
+                      if (paymentStyle == PaymentStyle.PAYTM_INSPIRED) {
+                        listOf(Color(0xFF002E6E), Color(0xFF00B9F1), Color(0xFF00E5FF))
                       } else {
-                        listOf(ZenDeepPurple, ZenRoyalPurple, ZenElectricBlue)
+                        listOf(ZenDeepPurple, ZenRoyalPurple, Color(0xFFB388FF))
                       }
                   )
               )
               .border(
                 width = 2.dp,
-                color =
-                  if (selectedTab == ZenBottomTab.SCAN) Color.White else ZenElectricBlue,
+                color = if (selectedTab == ZenBottomTab.SCAN) Color.White else accentColor,
                 shape = CircleShape,
               ),
           contentAlignment = Alignment.Center,
@@ -392,8 +484,7 @@ private fun ZenrationCenteredScannerBottomBar(
           text = "Scan QR",
           style = MaterialTheme.typography.labelSmall,
           fontWeight = FontWeight.Bold,
-          color =
-            if (selectedTab == ZenBottomTab.SCAN) ZenElectricBlue else ZenTextPrimary,
+          color = if (selectedTab == ZenBottomTab.SCAN) accentColor else ZenTextPrimary,
         )
       }
 
@@ -403,6 +494,7 @@ private fun ZenrationCenteredScannerBottomBar(
         selected = selectedTab == ZenBottomTab.VOICE,
         selectedIcon = Icons.AutoMirrored.Filled.VolumeUp,
         unselectedIcon = Icons.AutoMirrored.Outlined.VolumeUp,
+        accentColor = accentColor,
         onClick = { onSelectTab(ZenBottomTab.VOICE) },
         testTag = "bottom_nav_voice",
         modifier = Modifier.weight(1f),
@@ -414,6 +506,7 @@ private fun ZenrationCenteredScannerBottomBar(
         selected = selectedTab == ZenBottomTab.PROFILE,
         selectedIcon = Icons.Filled.Person,
         unselectedIcon = Icons.Outlined.Person,
+        accentColor = accentColor,
         onClick = { onSelectTab(ZenBottomTab.PROFILE) },
         testTag = "bottom_nav_profile",
         modifier = Modifier.weight(1f),
@@ -428,6 +521,7 @@ private fun StandardBottomNavTab(
   selected: Boolean,
   selectedIcon: ImageVector,
   unselectedIcon: ImageVector,
+  accentColor: Color,
   onClick: () -> Unit,
   testTag: String,
   modifier: Modifier = Modifier,
@@ -447,7 +541,7 @@ private fun StandardBottomNavTab(
         Modifier
           .clip(RoundedCornerShape(50))
           .background(
-            if (selected) ZenDeepPurple.copy(alpha = 0.38f) else Color.Transparent
+            if (selected) accentColor.copy(alpha = 0.22f) else Color.Transparent
           )
           .padding(horizontal = 14.dp, vertical = 4.dp),
       contentAlignment = Alignment.Center,
@@ -455,7 +549,7 @@ private fun StandardBottomNavTab(
       Icon(
         imageVector = if (selected) selectedIcon else unselectedIcon,
         contentDescription = label,
-        tint = if (selected) ZenElectricBlue else ZenTextMuted,
+        tint = if (selected) accentColor else ZenTextMuted,
         modifier = Modifier.size(22.dp),
       )
     }
@@ -464,7 +558,7 @@ private fun StandardBottomNavTab(
       text = label,
       style = MaterialTheme.typography.labelSmall,
       fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-      color = if (selected) ZenElectricBlue else ZenTextMuted,
+      color = if (selected) accentColor else ZenTextMuted,
     )
   }
 }

@@ -22,13 +22,13 @@ enum class VoiceLanguage(
     code = "hi",
     displayName = "Hindi Voice",
     nativeBadge = "हिंदी / Hinglish",
-    samplePreview = "\"250 rupees ki payment simulation complete.\"",
+    samplePreview = "\"150 rupaye ki simulated payment hui.\"",
   ),
   ENGLISH(
     code = "en",
     displayName = "English Voice",
     nativeBadge = "English (India)",
-    samplePreview = "\"250 rupees payment simulation complete.\"",
+    samplePreview = "\"150 rupees simulated payment completed.\"",
   );
 
   companion object {
@@ -305,20 +305,18 @@ class VoiceAnnouncementManager(context: Context) {
     /**
      * Builds the dynamic announcement string.
      * - Never hardcodes any amount.
-     * - Never speaks the word "Demo".
-     * - Always uses the exact phrase "payment simulation complete".
+     * - Reads the actual transaction amount dynamically.
      *
      * Examples (Hindi / Hinglish):
-     * - ₹25 -> "25 rupees ki payment simulation complete."
-     * - ₹150 -> "150 rupees ki payment simulation complete."
-     * - ₹750 -> "750 rupees ki payment simulation complete."
-     * - ₹2,000 -> "2000 rupees ki payment simulation complete."
+     * - ₹50 -> "50 rupaye ki simulated payment hui."
+     * - ₹150 -> "150 rupaye ki simulated payment hui."
+     * - ₹500 -> "500 rupaye ki simulated payment hui."
      */
     fun buildAnnouncementSentence(amount: Double, language: VoiceLanguage): String {
       val amountStr = formatAmountForSpeech(amount)
       return when (language) {
-        VoiceLanguage.HINDI -> "$amountStr rupees ki payment simulation complete."
-        VoiceLanguage.ENGLISH -> "$amountStr rupees payment simulation complete."
+        VoiceLanguage.HINDI -> "$amountStr rupaye ki simulated payment hui."
+        VoiceLanguage.ENGLISH -> "$amountStr rupees simulated payment completed."
       }
     }
   }

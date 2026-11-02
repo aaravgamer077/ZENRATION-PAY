@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.example.R
 import com.example.data.model.DemoBalance
+import com.example.data.model.PaymentStyle
 import com.example.data.model.SimulatedTransaction
 import com.example.data.model.UserProfile
 import com.example.data.remote.OperationType
@@ -15,7 +16,10 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.snapshots
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -57,13 +61,56 @@ class ZenrationRepository(
     return auth.currentUser?.uid ?: fallback.ifBlank { DEFAULT_LOCAL_UID }
   }
 
+  fun getRememberedUsername(): String {
+    return prefs?.getString(KEY_REMEMBERED_USERNAME, "")?.trim().orEmpty()
+  }
+
+  fun saveRememberedUsername(username: String) {
+    val clean = username.trim().take(60)
+    if (clean.isBlank()) return
+    val handle =
+      clean.lowercase(Locale.US).replace(Regex("[^a-z0-9]"), "").ifBlank { "player" }
+    val upi = "$handle@zenpay.sim"
+    val email = "$handle@zenrationpay.sim"
+    prefs
+      ?.edit()
+      ?.putString(KEY_REMEMBERED_USERNAME, clean)
+      ?.putString(KEY_PROFILE_NAME, clean)
+      ?.putString(KEY_PROFILE_EMAIL, email)
+      ?.putString(KEY_PROFILE_UPI, upi)
+      ?.apply()
+
+    val current = localProfileFlow.value ?: loadLocalProfile()
+    localProfileFlow.value =
+      current.copy(
+        name = clean,
+        displayName = clean,
+        email = email,
+        upiId = upi,
+        updatedAt = Timestamp.now(),
+      )
+  }
+
+  fun getSavedPaymentStyle(): PaymentStyle {
+    val raw = prefs?.getString(KEY_PAYMENT_STYLE, PaymentStyle.PAYTM_INSPIRED.id)
+    return PaymentStyle.fromId(raw)
+  }
+
+  fun savePaymentStyle(style: PaymentStyle) {
+    prefs?.edit()?.putString(KEY_PAYMENT_STYLE, style.id)?.apply()
+  }
+
   private fun loadLocalProfile(): UserProfile {
     val uid = DEFAULT_LOCAL_UID
-    val savedName = prefs?.getString(KEY_PROFILE_NAME, null)?.takeIf { it.isNotBlank() } ?: "Zenration User"
+    val savedName =
+      prefs?.getString(KEY_REMEMBERED_USERNAME, null)?.takeIf { it.isNotBlank() }
+        ?: prefs?.getString(KEY_PROFILE_NAME, null)?.takeIf { it.isNotBlank() }
+        ?: "Zenration Player"
     val savedEmail =
-      prefs?.getString(KEY_PROFILE_EMAIL, null)?.takeIf { it.isNotBlank() } ?: "user@zenrationpay.sim"
+      prefs?.getString(KEY_PROFILE_EMAIL, null)?.takeIf { it.isNotBlank() }
+        ?: "player@zenrationpay.sim"
     val savedUpi =
-      prefs?.getString(KEY_PROFILE_UPI, null)?.takeIf { it.isNotBlank() } ?: "zenration@zenpay.sim"
+      prefs?.getString(KEY_PROFILE_UPI, null)?.takeIf { it.isNotBlank() } ?: "player@zenpay.sim"
     val notif = prefs?.getBoolean(KEY_PROFILE_NOTIF, true) ?: true
     val bio = prefs?.getBoolean(KEY_PROFILE_BIO, false) ?: false
     val now = Timestamp.now()
@@ -82,11 +129,13 @@ class ZenrationRepository(
   }
 
   private fun saveLocalProfile(profile: UserProfile) {
+    val cleanName = profile.name.ifBlank { profile.displayName }
     prefs
       ?.edit()
-      ?.putString(KEY_PROFILE_NAME, profile.name.ifBlank { profile.displayName })
+      ?.putString(KEY_REMEMBERED_USERNAME, cleanName)
+      ?.putString(KEY_PROFILE_NAME, cleanName)
       ?.putString(KEY_PROFILE_EMAIL, profile.email)
-      ?.putString(KEY_PROFILE_UPI, profile.upiId ?: "zenration@zenpay.sim")
+      ?.putString(KEY_PROFILE_UPI, profile.upiId ?: "player@zenpay.sim")
       ?.putBoolean(KEY_PROFILE_NOTIF, profile.notificationsEnabled)
       ?.putBoolean(KEY_PROFILE_BIO, profile.biometricSimEnabled)
       ?.apply()
@@ -95,7 +144,11 @@ class ZenrationRepository(
 
   private fun loadLocalBalance(): DemoBalance {
     val uid = DEFAULT_LOCAL_UID
-    val rawBits = prefs?.getLong(KEY_DEMO_BALANCE_BITS, java.lang.Double.doubleToRawLongBits(DEFAULT_DEMO_BALANCE))
+    val rawBits =
+      prefs?.getLong(
+        KEY_DEMO_BALANCE_BITS,
+        java.lang.Double.doubleToRawLongBits(DEFAULT_DEMO_BALANCE),
+      )
     val amount =
       if (rawBits != null) {
         java.lang.Double.longBitsToDouble(rawBits).coerceIn(0.0, 1_000_000_000.0)
@@ -152,8 +205,12 @@ class ZenrationRepository(
             uid = uid,
             userId = uid,
             recipientName = obj.optString("recipientName", "Verified Merchant"),
+            recipientMobile = obj.optString("recipientMobile", "+91 98765 43210"),
             recipientUPI = recipientUpi,
             recipientUpiId = recipientUpi,
+            senderName = obj.optString("senderName", "Zenration Player"),
+            senderUpiId = obj.optString("senderUpiId", "player@zenpay.sim"),
+            paymentStyle = obj.optString("paymentStyle", PaymentStyle.PAYTM_INSPIRED.id),
             amount = obj.optDouble("amount", 0.0),
             currency = obj.optString("currency", "INR"),
             status = obj.optString("status", SHARED_SIMULATED_STATUS),
@@ -181,7 +238,11 @@ class ZenrationRepository(
             put("id", tx.id)
             put("uid", tx.uid.ifBlank { tx.userId })
             put("recipientName", tx.recipientName)
+            put("recipientMobile", tx.recipientMobile)
             put("recipientUpiId", tx.recipientUpiId.ifBlank { tx.recipientUPI })
+            put("senderName", tx.senderName)
+            put("senderUpiId", tx.senderUpiId)
+            put("paymentStyle", tx.paymentStyle)
             put("amount", tx.amount)
             put("currency", tx.currency)
             put("status", tx.status)
@@ -231,21 +292,23 @@ class ZenrationRepository(
     photoUrl: String? = null,
   ): Result<UserProfile> = runCatching {
     val uid = requireUserId()
-    val safeName = displayName.trim().ifBlank { "Zenration User" }.take(100)
-    val safeEmail = email.trim().ifBlank { "user@zenrationpay.sim" }.take(150)
+    val safeName = displayName.trim().ifBlank { "Zenration Player" }.take(100)
+    val safeEmail = email.trim().ifBlank { "player@zenrationpay.sim" }.take(150)
     val safePhoto = (photoUrl?.trim() ?: "").take(500)
     val defaultUpi =
-      "${safeEmail.substringBefore("@").lowercase().replace(Regex("[^a-z0-9]"), "").ifBlank { "user" }}@zenpay.sim"
+      "${safeEmail.substringBefore("@").lowercase().replace(Regex("[^a-z0-9]"), "").ifBlank { "player" }}@zenpay.sim"
         .take(100)
 
     if (!isCloudSignedIn()) {
       val current = localProfileFlow.value ?: loadLocalProfile()
+      val resolvedName =
+        getRememberedUsername().ifBlank { current.name.ifBlank { safeName } }
       val updated =
         current.copy(
           id = uid,
           userId = uid,
-          name = current.name.ifBlank { safeName },
-          displayName = current.displayName.ifBlank { safeName },
+          name = resolvedName,
+          displayName = resolvedName,
           email = current.email.ifBlank { safeEmail },
           upiId = current.upiId?.takeIf { it.isNotBlank() } ?: defaultUpi,
           updatedAt = Timestamp.now(),
@@ -339,8 +402,8 @@ class ZenrationRepository(
     biometricSimEnabled: Boolean,
   ): Result<Unit> = runCatching {
     val uid = requireUserId()
-    val safeName = displayName.trim().ifBlank { "Zenration User" }.take(100)
-    val safeUpi = upiId.trim().ifBlank { "user@zenpay.sim" }.take(100)
+    val safeName = displayName.trim().ifBlank { "Zenration Player" }.take(100)
+    val safeUpi = upiId.trim().ifBlank { "player@zenpay.sim" }.take(100)
 
     if (!isCloudSignedIn()) {
       val current = localProfileFlow.value ?: loadLocalProfile()
@@ -578,6 +641,8 @@ class ZenrationRepository(
     amount: Double,
     note: String? = null,
     deductFromDemoBalance: Boolean = true,
+    recipientMobile: String = "+91 98765 43210",
+    paymentStyle: PaymentStyle = getSavedPaymentStyle(),
   ): Result<SimulatedTransaction> = runCatching {
     val uid = requireUserId()
     require(amount > 0.0 && amount <= 10000000.0) {
@@ -585,9 +650,13 @@ class ZenrationRepository(
     }
     val safeRecipientName = recipientName.trim().ifBlank { "Verified Merchant" }.take(100)
     val safeRecipientUpi = recipientUpiId.trim().ifBlank { "merchant@upi" }.take(100)
+    val safeRecipientMobile = recipientMobile.trim().ifBlank { "+91 98765 43210" }.take(30)
+    val currentProfile = localProfileFlow.value ?: loadLocalProfile()
+    val senderName = currentProfile.name.ifBlank { "Zenration Player" }
+    val senderUpi = currentProfile.upiId ?: "player@zenpay.sim"
     val txId = "tx_${UUID.randomUUID().toString().replace("-", "")}"
     val referenceId =
-      "SIM-ZEN-${UUID.randomUUID().toString().replace("-", "").uppercase().take(10)}"
+      "DEMO-ZEN-${UUID.randomUUID().toString().replace("-", "").uppercase().take(10)}"
     val trimmedNote = note?.trim()?.take(200)?.takeIf { it.isNotBlank() }
 
     if (!isCloudSignedIn()) {
@@ -597,8 +666,12 @@ class ZenrationRepository(
           uid = uid,
           userId = uid,
           recipientName = safeRecipientName,
+          recipientMobile = safeRecipientMobile,
           recipientUPI = safeRecipientUpi,
           recipientUpiId = safeRecipientUpi,
+          senderName = senderName,
+          senderUpiId = senderUpi,
+          paymentStyle = paymentStyle.id,
           amount = amount,
           currency = "INR",
           status = SHARED_SIMULATED_STATUS,
@@ -663,15 +736,24 @@ class ZenrationRepository(
       }
       val savedSnap = docRef.get().await()
       if (savedSnap.exists()) {
-        SimulatedTransaction.fromSnapshot(savedSnap)
+        SimulatedTransaction.fromSnapshot(savedSnap).copy(
+          recipientMobile = safeRecipientMobile,
+          senderName = senderName,
+          senderUpiId = senderUpi,
+          paymentStyle = paymentStyle.id,
+        )
       } else {
         SimulatedTransaction(
           id = txId,
           uid = uid,
           userId = uid,
           recipientName = safeRecipientName,
+          recipientMobile = safeRecipientMobile,
           recipientUPI = safeRecipientUpi,
           recipientUpiId = safeRecipientUpi,
+          senderName = senderName,
+          senderUpiId = senderUpi,
+          paymentStyle = paymentStyle.id,
           amount = amount,
           currency = "INR",
           status = SHARED_SIMULATED_STATUS,
@@ -694,6 +776,8 @@ class ZenrationRepository(
     const val SHARED_SIMULATED_STATUS = "SIMULATED – NOT PAID"
     const val DEFAULT_LOCAL_UID = "zenration_local_user"
     private const val LOCAL_PREFS_NAME = "zenration_local_sandbox_prefs"
+    private const val KEY_REMEMBERED_USERNAME = "remembered_username"
+    private const val KEY_PAYMENT_STYLE = "selected_payment_style"
     private const val KEY_PROFILE_NAME = "profile_name"
     private const val KEY_PROFILE_EMAIL = "profile_email"
     private const val KEY_PROFILE_UPI = "profile_upi"
@@ -701,5 +785,30 @@ class ZenrationRepository(
     private const val KEY_PROFILE_BIO = "profile_bio"
     private const val KEY_DEMO_BALANCE_BITS = "demo_balance_bits"
     private const val KEY_TRANSACTIONS_JSON = "transactions_json"
+
+    // Salted SHA-256 verification so the owner password is never exposed in source code or APK
+    private const val OWNER_VAULT_SALT = "ZENRATION_OWNER_VAULT_v1::"
+    private val EXPECTED_OWNER_DIGEST =
+      byteArrayOf(
+        0x2a, 0x2c, 0x49, 0xa7.toByte(), 0x59, 0x4f, 0x76, 0x82.toByte(),
+        0x53, 0x28, 0x78, 0x34, 0xe7.toByte(), 0x80.toByte(), 0xa5.toByte(), 0xc9.toByte(),
+        0x5c, 0x23, 0x8c.toByte(), 0x44, 0xc4.toByte(), 0x17, 0xa0.toByte(), 0x3c,
+        0xe3.toByte(), 0xf5.toByte(), 0x6e, 0x01, 0xe8.toByte(), 0x4e, 0x9d.toByte(), 0xdb.toByte(),
+      )
+
+    fun verifyOwnerPassword(rawInput: String): Boolean {
+      val normalized = rawInput.trim().uppercase(Locale.US)
+      if (normalized.isEmpty()) return false
+      return try {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val computed =
+          digest.digest(
+            "$OWNER_VAULT_SALT$normalized".toByteArray(StandardCharsets.UTF_8)
+          )
+        MessageDigest.isEqual(computed, EXPECTED_OWNER_DIGEST)
+      } catch (_: Exception) {
+        false
+      }
+    }
   }
 }

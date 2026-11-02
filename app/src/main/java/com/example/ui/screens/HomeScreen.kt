@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,15 +28,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AddCard
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
@@ -73,6 +79,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.DemoBalance
+import com.example.data.model.DemoContact
+import com.example.data.model.DemoContactsCatalog
+import com.example.data.model.PaymentStyle
 import com.example.data.model.SimulatedTransaction
 import com.example.data.model.UpiQrPayload
 import com.example.data.model.UserProfile
@@ -95,12 +104,24 @@ import com.example.ui.theme.ZenTextSecondary
 import com.example.ui.viewmodel.UiState
 import com.example.voice.VoicePreferences
 
+private val PaytmPrimaryBlue = Color(0xFF002E6E)
+private val PaytmVibrantCyan = Color(0xFF00B9F1)
+private val PaytmLightCyan = Color(0xFF00E5FF)
+
+private val PhonePeDeepPurple = Color(0xFF3B0A75)
+private val PhonePeRichViolet = Color(0xFF5F259F)
+private val PhonePeLightPurple = Color(0xFFB388FF)
+
 @Composable
 fun HomeScreen(
   userProfileState: UiState<UserProfile?>,
   demoBalanceState: UiState<DemoBalance?>,
   transactionsState: UiState<List<SimulatedTransaction>>,
   voicePreferences: VoicePreferences,
+  paymentStyle: PaymentStyle = PaymentStyle.PAYTM_INSPIRED,
+  onSelectPaymentStyle: (PaymentStyle) -> Unit = {},
+  onOpenStyleSelectorClick: () -> Unit = {},
+  onOpenRecipientSearchClick: (RecipientSearchMode) -> Unit = {},
   onScanQrClick: () -> Unit,
   onOpenCustomBalanceClick: () -> Unit,
   onOpenVoiceSettingsClick: () -> Unit,
@@ -120,18 +141,28 @@ fun HomeScreen(
   val transactions = (transactionsState as? UiState.Success)?.data.orEmpty()
   var isTopLeftMenuExpanded by remember { mutableStateOf(false) }
 
+  val isPaytmStyle = paymentStyle == PaymentStyle.PAYTM_INSPIRED
+  val stylePrimaryAccent = if (isPaytmStyle) PaytmLightCyan else PhonePeLightPurple
+  val styleSecondaryAccent = if (isPaytmStyle) PaytmVibrantCyan else PhonePeRichViolet
+  val styleBannerGradient =
+    if (isPaytmStyle) {
+      listOf(PaytmPrimaryBlue, Color(0xFF00529B), PaytmVibrantCyan)
+    } else {
+      listOf(PhonePeDeepPurple, PhonePeRichViolet, Color(0xFF7C4DFF))
+    }
+
   val displayName =
     profile?.name?.takeIf { it.isNotBlank() }
       ?: profile?.displayName?.takeIf { it.isNotBlank() }
-      ?: "Digital Pioneer"
+      ?: "Zenration Player"
   val userEmail = profile?.email.orEmpty()
-  val userUpi = profile?.upiId ?: "pioneer@zenpay.sim"
+  val userUpi = profile?.upiId ?: "player@zenpay.sim"
   val currentBalanceAmount = balance?.demoBalance ?: balance?.balance ?: 0.0
 
   LazyColumn(
     modifier = modifier.fillMaxSize().background(ZenBlack).testTag("home_screen_list"),
     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-    verticalArrangement = Arrangement.spacedBy(20.dp),
+    verticalArrangement = Arrangement.spacedBy(18.dp),
   ) {
     // 1. Top Header: Three-Dot Menu (⋮) at Top-Left + ZENRATION PAY Logo + User Profile Avatar
     item {
@@ -140,7 +171,10 @@ fun HomeScreen(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.weight(1f).padding(end = 8.dp),
+        ) {
           Box {
             IconButton(
               onClick = { isTopLeftMenuExpanded = true },
@@ -149,13 +183,13 @@ fun HomeScreen(
                   .size(48.dp)
                   .clip(CircleShape)
                   .background(ZenSurfaceElevated)
-                  .border(1.dp, ZenCardBorder, CircleShape)
+                  .border(1.dp, stylePrimaryAccent.copy(alpha = 0.65f), CircleShape)
                   .testTag("home_three_dot_menu_button"),
             ) {
               Icon(
                 imageVector = Icons.Default.MoreVert,
                 contentDescription = "More Options Menu",
-                tint = ZenElectricBlue,
+                tint = stylePrimaryAccent,
               )
             }
 
@@ -165,7 +199,7 @@ fun HomeScreen(
               modifier =
                 Modifier
                   .background(ZenSurfaceElevated)
-                  .border(1.dp, ZenElectricBlue.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                  .border(1.dp, stylePrimaryAccent.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
             ) {
               DropdownMenuItem(
                 text = {
@@ -173,12 +207,12 @@ fun HomeScreen(
                     Icon(
                       imageVector = Icons.Default.AccountBalanceWallet,
                       contentDescription = null,
-                      tint = ZenElectricBlue,
+                      tint = stylePrimaryAccent,
                       modifier = Modifier.size(20.dp),
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                      text = "Custom Your Balance",
+                      text = "CUSTOM YOUR BALANCE",
                       style = MaterialTheme.typography.titleSmall,
                       color = ZenTextPrimary,
                       fontWeight = FontWeight.Bold,
@@ -190,6 +224,31 @@ fun HomeScreen(
                   onOpenCustomBalanceClick()
                 },
                 modifier = Modifier.testTag("menu_option_custom_balance"),
+              )
+
+              DropdownMenuItem(
+                text = {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      imageVector = Icons.Default.Palette,
+                      contentDescription = null,
+                      tint = stylePrimaryAccent,
+                      modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                      text = "Choose Payment Style",
+                      style = MaterialTheme.typography.titleSmall,
+                      color = ZenTextPrimary,
+                      fontWeight = FontWeight.Bold,
+                    )
+                  }
+                },
+                onClick = {
+                  isTopLeftMenuExpanded = false
+                  onOpenStyleSelectorClick()
+                },
+                modifier = Modifier.testTag("menu_option_switch_style"),
               )
             }
           }
@@ -205,9 +264,15 @@ fun HomeScreen(
               fontWeight = FontWeight.Bold,
             )
             Text(
-              text = stringResource(R.string.app_tagline),
+              text =
+                if (isPaytmStyle) {
+                  "PAYTM-INSPIRED • SIMULATED"
+                } else {
+                  "PHONEPE-INSPIRED • SIMULATED"
+                },
               style = MaterialTheme.typography.labelSmall,
-              color = ZenElectricBlue,
+              color = stylePrimaryAccent,
+              fontWeight = FontWeight.Bold,
             )
           }
         }
@@ -221,7 +286,7 @@ fun HomeScreen(
               .testTag("home_user_profile_chip"),
           shape = RoundedCornerShape(50),
           color = ZenSurfaceElevated,
-          border = BorderStroke(1.dp, ZenCardBorder),
+          border = BorderStroke(1.dp, stylePrimaryAccent.copy(alpha = 0.5f)),
         ) {
           Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -243,7 +308,7 @@ fun HomeScreen(
               Text(
                 text = "Profile",
                 style = MaterialTheme.typography.labelSmall,
-                color = ZenPurpleGlow,
+                color = stylePrimaryAccent,
               )
             }
           }
@@ -251,66 +316,322 @@ fun HomeScreen(
       }
     }
 
-    // 2. Welcome Message Banner with Copyable UPI Handle
+    // 2. Payment Style Switcher Strip (Paytm-Inspired Blue/Cyan vs PhonePe-Inspired Purple)
     item {
       Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().testTag("home_style_switcher_card"),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
+        border = BorderStroke(1.2.dp, stylePrimaryAccent.copy(alpha = 0.55f)),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(10.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Surface(
+            modifier =
+              Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { onSelectPaymentStyle(PaymentStyle.PAYTM_INSPIRED) }
+                .testTag("switch_to_paytm_style_button"),
+            shape = RoundedCornerShape(14.dp),
+            color =
+              if (isPaytmStyle) PaytmVibrantCyan.copy(alpha = 0.25f) else Color.Transparent,
+            border =
+              BorderStroke(
+                width = 1.dp,
+                color = if (isPaytmStyle) PaytmLightCyan else ZenCardBorder,
+              ),
+          ) {
+            Column(
+              modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              Text(
+                text = "PAYTM-INSPIRED",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (isPaytmStyle) PaytmLightCyan else ZenTextSecondary,
+                fontWeight = FontWeight.ExtraBold,
+              )
+              Text(
+                text = "Blue & Light-Cyan",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isPaytmStyle) Color.White else ZenTextMuted,
+              )
+            }
+          }
+
+          Surface(
+            modifier =
+              Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { onSelectPaymentStyle(PaymentStyle.PHONEPE_INSPIRED) }
+                .testTag("switch_to_phonepe_style_button"),
+            shape = RoundedCornerShape(14.dp),
+            color =
+              if (!isPaytmStyle) PhonePeRichViolet.copy(alpha = 0.35f) else Color.Transparent,
+            border =
+              BorderStroke(
+                width = 1.dp,
+                color = if (!isPaytmStyle) PhonePeLightPurple else ZenCardBorder,
+              ),
+          ) {
+            Column(
+              modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              Text(
+                text = "PHONEPE-INSPIRED",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (!isPaytmStyle) PhonePeLightPurple else ZenTextSecondary,
+                fontWeight = FontWeight.ExtraBold,
+              )
+              Text(
+                text = "Royal Purple Theme",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (!isPaytmStyle) Color.White else ZenTextMuted,
+              )
+            }
+          }
+
+          IconButton(
+            onClick = onOpenStyleSelectorClick,
+            modifier =
+              Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(ZenSurfaceElevated)
+                .testTag("open_style_cards_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.Palette,
+              contentDescription = "Open Style Selection Cards",
+              tint = stylePrimaryAccent,
+            )
+          }
+        }
+      }
+    }
+
+    // 3. Recipient Search Bar (Search by Mobile Number, Username, or Saved Demo Contacts)
+    item {
+      Surface(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable { onOpenRecipientSearchClick(RecipientSearchMode.ALL) }
+            .testTag("home_recipient_search_bar"),
+        shape = RoundedCornerShape(18.dp),
+        color = ZenSurfaceDark,
+        border = BorderStroke(1.2.dp, stylePrimaryAccent.copy(alpha = 0.6f)),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f),
+          ) {
+            Icon(
+              imageVector = Icons.Default.Search,
+              contentDescription = "Search recipients",
+              tint = stylePrimaryAccent,
+              modifier = Modifier.size(22.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+              Text(
+                text = "Search Mobile Number, Username or Demo Contact",
+                style = MaterialTheme.typography.bodyMedium,
+                color = ZenTextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text = "Dummy contact directory • Instant simulated transfer",
+                style = MaterialTheme.typography.labelSmall,
+                color = ZenTextSecondary,
+              )
+            }
+          }
+          SimulatedBadgePill(text = "SEARCH", accentColor = stylePrimaryAccent)
+        }
+      }
+    }
+
+    // 4. TRANSFER MONEY SECTION (Paytm-Inspired Blue/Cyan OR PhonePe-Inspired Purple)
+    item {
+      Card(
+        modifier = Modifier.fillMaxWidth().testTag("transfer_money_section_card"),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        border = BorderStroke(1.4.dp, stylePrimaryAccent.copy(alpha = 0.65f)),
+      ) {
+        Column(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .background(
+                brush =
+                  Brush.verticalGradient(
+                    colors =
+                      if (isPaytmStyle) {
+                        listOf(Color(0xFF002559), Color(0xFF06152D))
+                      } else {
+                        listOf(Color(0xFF2B0859), Color(0xFF130829))
+                      }
+                  )
+              )
+              .padding(18.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+          ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+              Text(
+                text = "Transfer Money (Simulated)",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
+              )
+              Text(
+                text =
+                  if (isPaytmStyle) {
+                    "ZENRATION PAY • Paytm-Inspired Blue & Cyan"
+                  } else {
+                    "ZENRATION PAY • PhonePe-Inspired Purple"
+                  },
+                style = MaterialTheme.typography.labelSmall,
+                color = stylePrimaryAccent,
+              )
+            }
+            SimulatedBadgePill(
+              text = "SIMULATED – NOT PAID",
+              accentColor = ZenSimAmber,
+            )
+          }
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            TransferOptionTile(
+              icon = Icons.Default.PhoneAndroid,
+              label = "Mobile Number",
+              accentColor = stylePrimaryAccent,
+              containerColor = styleSecondaryAccent.copy(alpha = 0.22f),
+              onClick = { onOpenRecipientSearchClick(RecipientSearchMode.MOBILE_NUMBER) },
+              testTag = "transfer_mobile_number_button",
+              modifier = Modifier.weight(1f),
+            )
+
+            TransferOptionTile(
+              icon = Icons.Default.AlternateEmail,
+              label = "UPI ID",
+              accentColor = stylePrimaryAccent,
+              containerColor = styleSecondaryAccent.copy(alpha = 0.22f),
+              onClick = { onOpenRecipientSearchClick(RecipientSearchMode.UPI_ID) },
+              testTag = "transfer_upi_id_button",
+              modifier = Modifier.weight(1f),
+            )
+
+            TransferOptionTile(
+              icon = Icons.Default.QrCodeScanner,
+              label = "Scan QR",
+              accentColor = stylePrimaryAccent,
+              containerColor = styleSecondaryAccent.copy(alpha = 0.22f),
+              onClick = onScanQrClick,
+              testTag = "transfer_scan_qr_button",
+              modifier = Modifier.weight(1f),
+            )
+
+            TransferOptionTile(
+              icon = Icons.Default.AccountBalance,
+              label = paymentStyle.bankTransferLabel,
+              accentColor = stylePrimaryAccent,
+              containerColor = styleSecondaryAccent.copy(alpha = 0.22f),
+              onClick = { onOpenRecipientSearchClick(RecipientSearchMode.BANK_TRANSFER) },
+              testTag = "transfer_bank_button",
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
+      }
+    }
+
+    // 5. RECENT CONTACTS SECTION (Dummy Contact Data Only)
+    item {
+      Card(
+        modifier = Modifier.fillMaxWidth().testTag("recent_contacts_section"),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
         border = BorderStroke(1.dp, ZenCardBorder),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(18.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = "Welcome back, $displayName",
-              style = MaterialTheme.typography.titleMedium,
-              color = ZenTextPrimary,
-              fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              modifier =
-                Modifier.clickable {
-                  val clipboard =
-                    context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                  clipboard?.setPrimaryClip(ClipData.newPlainText("Sandbox UPI ID", userUpi))
-                  onShowToastMessage("Copied Sandbox UPI ID: $userUpi")
-                },
-            ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column {
               Text(
-                text = "UPI ID: $userUpi",
-                style = MaterialTheme.typography.bodySmall,
-                color = ZenElectricBlue,
+                text = "Recent Contacts (Demo Only)",
+                style = MaterialTheme.typography.titleSmall,
+                color = ZenTextPrimary,
+                fontWeight = FontWeight.Bold,
               )
-              Spacer(modifier = Modifier.width(6.dp))
-              Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = "Copy UPI ID",
-                tint = ZenElectricBlue,
-                modifier = Modifier.size(13.dp),
+              Text(
+                text = "Tap any dummy contact to open Amount Entry",
+                style = MaterialTheme.typography.labelSmall,
+                color = ZenTextSecondary,
               )
             }
-            if (userEmail.isNotBlank()) {
+            TextButton(
+              onClick = { onOpenRecipientSearchClick(RecipientSearchMode.ALL) },
+              modifier = Modifier.testTag("recent_contacts_search_all_button"),
+            ) {
               Text(
-                text = userEmail,
-                style = MaterialTheme.typography.bodySmall,
-                color = ZenTextMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                text = "Search All",
+                style = MaterialTheme.typography.labelMedium,
+                color = stylePrimaryAccent,
+                fontWeight = FontWeight.Bold,
               )
             }
           }
-          SimulatedBadgePill(text = "SANDBOX", accentColor = ZenPurpleGlow)
+
+          LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp),
+          ) {
+            items(
+              items = DemoContactsCatalog.defaultContacts,
+              key = { it.id },
+            ) { contact ->
+              RecentContactChip(
+                contact = contact,
+                accentColor = stylePrimaryAccent,
+                onClick = { onQuickSimulateMerchant(contact.toUpiPayload()) },
+              )
+            }
+          }
         }
       }
     }
 
-    // 3. Demo Balance Hero Card (Synced with Firestore /balances/{uid})
+    // 6. Demo Balance Hero Card (Clearly labeled SIMULATED BALANCE – NOT REAL MONEY)
     item {
       DemoBalanceHeroCard(
         demoBalance = balance,
@@ -319,7 +640,7 @@ fun HomeScreen(
       )
     }
 
-    // 4. Primary Scan QR CTA Button + Quick Navigation Actions
+    // 7. Primary Scan QR CTA Button + Quick Navigation Actions
     item {
       Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Button(
@@ -327,7 +648,7 @@ fun HomeScreen(
           modifier =
             Modifier
               .fillMaxWidth()
-              .height(62.dp)
+              .height(60.dp)
               .testTag("home_scan_qr_button"),
           shape = RoundedCornerShape(20.dp),
           colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -338,10 +659,7 @@ fun HomeScreen(
               Modifier
                 .fillMaxSize()
                 .background(
-                  brush =
-                    Brush.horizontalGradient(
-                      colors = listOf(ZenDeepPurple, ZenRoyalPurple, ZenElectricBlue)
-                    ),
+                  brush = Brush.horizontalGradient(colors = styleBannerGradient),
                   shape = RoundedCornerShape(20.dp),
                 ),
             contentAlignment = Alignment.Center,
@@ -353,7 +671,7 @@ fun HomeScreen(
               Icon(
                 imageVector = Icons.Default.QrCodeScanner,
                 contentDescription = "Scan UPI QR code",
-                tint = ZenTextPrimary,
+                tint = Color.White,
                 modifier = Modifier.size(26.dp),
               )
               Spacer(modifier = Modifier.width(12.dp))
@@ -361,7 +679,7 @@ fun HomeScreen(
                 text = "SCAN ANY UPI QR (SIMULATOR)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = ZenTextPrimary,
+                color = Color.White,
               )
             }
           }
@@ -375,7 +693,7 @@ fun HomeScreen(
           QuickActionTile(
             icon = Icons.Default.QrCodeScanner,
             label = "Scan QR",
-            accent = ZenElectricBlue,
+            accent = stylePrimaryAccent,
             onClick = onScanQrClick,
             testTag = "quick_action_scan",
             modifier = Modifier.weight(1f),
@@ -391,7 +709,7 @@ fun HomeScreen(
           QuickActionTile(
             icon = Icons.Default.History,
             label = "History",
-            accent = ZenElectricBlue,
+            accent = stylePrimaryAccent,
             onClick = onViewAllHistoryClick,
             testTag = "quick_action_history",
             modifier = Modifier.weight(1f),
@@ -408,13 +726,13 @@ fun HomeScreen(
       }
     }
 
-    // 5. Dynamic Voice Soundbox Quick Control Strip on Home Screen
+    // 8. Dynamic Voice Soundbox Quick Control Strip on Home Screen
     item {
       Card(
         modifier = Modifier.fillMaxWidth().testTag("home_voice_soundbox_card"),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
-        border = BorderStroke(1.dp, ZenElectricBlue.copy(alpha = 0.4f)),
+        border = BorderStroke(1.dp, stylePrimaryAccent.copy(alpha = 0.45f)),
       ) {
         Column(
           modifier = Modifier.fillMaxWidth().padding(18.dp),
@@ -423,45 +741,48 @@ fun HomeScreen(
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
           ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.weight(1f).padding(end = 8.dp),
+            ) {
               Box(
                 modifier =
                   Modifier
                     .size(42.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(ZenDeepPurple.copy(alpha = 0.35f))
-                    .border(1.dp, ZenElectricBlue.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                    .background(styleSecondaryAccent.copy(alpha = 0.25f))
+                    .border(1.dp, stylePrimaryAccent.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
               ) {
                 Icon(
                   imageVector = Icons.Default.RecordVoiceOver,
                   contentDescription = null,
-                  tint = ZenElectricBlue,
+                  tint = stylePrimaryAccent,
                   modifier = Modifier.size(22.dp),
                 )
               }
               Spacer(modifier = Modifier.width(12.dp))
               Column {
                 Text(
-                  text = "Dynamic Voice Soundbox",
+                  text = "Dynamic Voice Announcement",
                   style = MaterialTheme.typography.titleMedium,
                   color = ZenTextPrimary,
                   fontWeight = FontWeight.Bold,
                 )
                 Text(
                   text =
-                    "${voicePreferences.language.displayName} • Volume ${(voicePreferences.volume * 100).toInt()}%",
+                    "\"150 rupaye ki simulated payment hui.\" • ${(voicePreferences.volume * 100).toInt()}% Vol",
                   style = MaterialTheme.typography.bodySmall,
-                  color = ZenPurpleGlow,
+                  color = stylePrimaryAccent,
                 )
               }
             }
 
             SimulatedBadgePill(
               text = if (voicePreferences.isEnabled) "ACTIVE" else "MUTED",
-              accentColor = if (voicePreferences.isEnabled) ZenElectricBlue else ZenSimAmber,
+              accentColor = if (voicePreferences.isEnabled) stylePrimaryAccent else ZenSimAmber,
             )
           }
 
@@ -472,24 +793,24 @@ fun HomeScreen(
             OutlinedButton(
               onClick = { onTestVoiceQuickClick(150.0) },
               modifier = Modifier.weight(1f).testTag("home_test_voice_button"),
-              border = BorderStroke(1.dp, ZenElectricBlue),
+              border = BorderStroke(1.dp, stylePrimaryAccent),
               shape = RoundedCornerShape(12.dp),
             ) {
               Icon(
                 imageVector = Icons.Default.PlayArrow,
                 contentDescription = null,
-                tint = ZenElectricBlue,
+                tint = stylePrimaryAccent,
                 modifier = Modifier.size(16.dp),
               )
               Spacer(modifier = Modifier.width(6.dp))
-              Text(text = "Test Voice (₹150)", color = ZenElectricBlue)
+              Text(text = "Test Voice (₹150)", color = stylePrimaryAccent)
             }
 
             Button(
               onClick = onOpenVoiceSettingsClick,
               modifier = Modifier.weight(1f).testTag("home_voice_settings_button"),
               shape = RoundedCornerShape(12.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = ZenRoyalPurple),
+              colors = ButtonDefaults.buttonColors(containerColor = styleSecondaryAccent),
             ) {
               Text(text = "Voice Settings", color = Color.White)
             }
@@ -498,83 +819,66 @@ fun HomeScreen(
       }
     }
 
-    // 6. Instant Sandbox UPI Merchants (1-tap test simulation)
+    // 9. Welcome & Player UPI Handle Card
     item {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          text = "Quick Sandbox UPI Merchants",
-          style = MaterialTheme.typography.titleSmall,
-          color = ZenTextSecondary,
-        )
+      Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
+        border = BorderStroke(1.dp, ZenCardBorder),
+      ) {
         Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
+          modifier = Modifier.fillMaxWidth().padding(18.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          val presets =
-            listOf(
-              UpiQrPayload(
-                recipientUpiId = "novacafe@okaxis",
-                recipientName = "Nova Cyber Cafe",
-                amount = "25",
-                note = "Espresso Shot",
-              ),
-              UpiQrPayload(
-                recipientUpiId = "zenithmart@ybl",
-                recipientName = "Zenith Tech Store",
-                amount = "750",
-                note = "Fast Charger",
-              ),
-              UpiQrPayload(
-                recipientUpiId = "metrofresh@icici",
-                recipientName = "Metro HyperMart",
-                amount = "2000",
-                note = "Monthly Supplies",
-              ),
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Operator: $displayName",
+              style = MaterialTheme.typography.titleMedium,
+              color = ZenTextPrimary,
+              fontWeight = FontWeight.Bold,
             )
-          presets.forEach { preset ->
-            Card(
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
               modifier =
-                Modifier
-                  .weight(1f)
-                  .clip(RoundedCornerShape(16.dp))
-                  .clickable { onQuickSimulateMerchant(preset) },
-              shape = RoundedCornerShape(16.dp),
-              colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
-              border = BorderStroke(1.dp, ZenCardBorder),
+                Modifier.clickable {
+                  val clipboard =
+                    context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                  clipboard?.setPrimaryClip(ClipData.newPlainText("Sandbox UPI ID", userUpi))
+                  onShowToastMessage("Copied Sandbox UPI ID: $userUpi")
+                },
             ) {
-              Column(
-                modifier = Modifier.padding(12.dp),
-                horizontalAlignment = Alignment.Start,
-              ) {
-                Text(
-                  text = preset.recipientName,
-                  style = MaterialTheme.typography.labelMedium,
-                  color = ZenTextPrimary,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                  text = preset.recipientUpiId,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = ZenPurpleGlow,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                  text = "Sim ₹${preset.amount}",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = ZenElectricBlue,
-                )
-              }
+              Text(
+                text = "Simulated UPI ID: $userUpi",
+                style = MaterialTheme.typography.bodySmall,
+                color = stylePrimaryAccent,
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "Copy UPI ID",
+                tint = stylePrimaryAccent,
+                modifier = Modifier.size(13.dp),
+              )
+            }
+            if (userEmail.isNotBlank()) {
+              Text(
+                text = userEmail,
+                style = MaterialTheme.typography.bodySmall,
+                color = ZenTextMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
             }
           }
+          SimulatedBadgePill(text = "SANDBOX", accentColor = stylePrimaryAccent)
         }
       }
     }
 
-    // 7. Transaction History Preview Section
+    // 10. Transaction History Preview Section
     item {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -593,7 +897,7 @@ fun HomeScreen(
           Text(
             text = "See All (${transactions.size})",
             style = MaterialTheme.typography.labelLarge,
-            color = ZenElectricBlue,
+            color = stylePrimaryAccent,
           )
         }
       }
@@ -614,7 +918,7 @@ fun HomeScreen(
             Icon(
               imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
               contentDescription = null,
-              tint = ZenPurpleGlow,
+              tint = stylePrimaryAccent,
               modifier = Modifier.size(40.dp),
             )
             Spacer(modifier = Modifier.height(10.dp))
@@ -626,7 +930,7 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(4.dp))
             Text(
               text =
-                "Tap 'Scan UPI QR' or choose a Quick Sandbox Merchant above to test your first simulated payment with voice announcement.",
+                "Select a Recent Contact, use Mobile Number / UPI ID / Scan QR above to run a simulated payment.",
               style = MaterialTheme.typography.bodySmall,
               color = ZenTextSecondary,
               textAlign = TextAlign.Center,
@@ -636,7 +940,7 @@ fun HomeScreen(
       }
     } else {
       items(
-        items = transactions.take(4),
+        items = transactions.take(5),
         key = { it.id.ifBlank { it.referenceId } },
       ) { tx ->
         TransactionItemCard(
@@ -646,7 +950,7 @@ fun HomeScreen(
       }
     }
 
-    // 8. Digital Sandbox Hub & Utility Buttons Section (Bottom Interactive Sections)
+    // 11. Digital Sandbox Hub & Utility Buttons Section
     item {
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -664,26 +968,17 @@ fun HomeScreen(
             icon = Icons.Default.AddCard,
             title = "+₹5,000 Credits",
             subtitle = "Top up sandbox balance",
-            accent = ZenElectricBlue,
+            accent = stylePrimaryAccent,
             onClick = { onTopUpBalanceClick(currentBalanceAmount + 5000.0) },
             testTag = "sandbox_tool_topup",
             modifier = Modifier.weight(1f),
           )
           SandboxToolButtonCard(
             icon = Icons.Default.QrCode2,
-            title = "Custom Amount",
-            subtitle = "Enter any ₹ to simulate",
+            title = "Custom Balance",
+            subtitle = "10s Matrix Protocol",
             accent = ZenPurpleGlow,
-            onClick = {
-              onQuickSimulateMerchant(
-                UpiQrPayload(
-                  recipientUpiId = "custommerchant@zenpay.sim",
-                  recipientName = "Zenration Custom Sandbox",
-                  amount = "",
-                  note = "Custom Amount Simulation",
-                )
-              )
-            },
+            onClick = onOpenCustomBalanceClick,
             testTag = "sandbox_tool_custom_pay",
             modifier = Modifier.weight(1f),
           )
@@ -704,10 +999,10 @@ fun HomeScreen(
           )
           SandboxToolButtonCard(
             icon = Icons.AutoMirrored.Filled.VolumeUp,
-            title = "Test ₹2,000 Voice",
-            subtitle = "Hear Hindi/English alert",
-            accent = ZenElectricBlue,
-            onClick = { onTestVoiceQuickClick(2000.0) },
+            title = "Test ₹500 Voice",
+            subtitle = "Hear Hindi voice alert",
+            accent = stylePrimaryAccent,
+            onClick = { onTestVoiceQuickClick(500.0) },
             testTag = "sandbox_tool_test_2000_voice",
             modifier = Modifier.weight(1f),
           )
@@ -715,61 +1010,7 @@ fun HomeScreen(
       }
     }
 
-    // 9. Account Settings Overview Card on Home Screen
-    item {
-      Card(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(onClick = onOpenAccountSettingsClick)
-            .testTag("home_account_settings_card"),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = ZenSurfaceDark),
-        border = BorderStroke(1.dp, ZenCardBorder),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(18.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Box(
-            modifier =
-              Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(ZenDeepPurple.copy(alpha = 0.28f))
-                .border(1.dp, ZenRoyalPurple.copy(alpha = 0.5f), RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center,
-          ) {
-            Icon(
-              imageVector = Icons.Default.Settings,
-              contentDescription = null,
-              tint = ZenElectricBlue,
-            )
-          }
-          Spacer(modifier = Modifier.width(14.dp))
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = stringResource(R.string.account_settings),
-              style = MaterialTheme.typography.titleMedium,
-              color = ZenTextPrimary,
-            )
-            Text(
-              text = "Manage Google profile, sandbox UPI ID, voice alerts & logout",
-              style = MaterialTheme.typography.bodySmall,
-              color = ZenTextSecondary,
-            )
-          }
-          Icon(
-            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = "Open Account Settings",
-            tint = ZenElectricBlue,
-          )
-        }
-      }
-    }
-
-    // 10. Sandbox Safety Footer
+    // 12. Sandbox Safety Footer
     item {
       Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -784,13 +1025,115 @@ fun HomeScreen(
         )
         Spacer(modifier = Modifier.width(6.dp))
         Text(
-          text = "ZENRATION PAY Sandbox • All balances and payments are 100% simulated",
+          text = "ZENRATION PAY Sandbox • SIMULATED – NOT PAID • Zero real money",
           style = MaterialTheme.typography.bodySmall,
           color = ZenTextMuted,
           textAlign = TextAlign.Center,
         )
       }
     }
+  }
+}
+
+@Composable
+private fun TransferOptionTile(
+  icon: ImageVector,
+  label: String,
+  accentColor: Color,
+  containerColor: Color,
+  onClick: () -> Unit,
+  testTag: String,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(16.dp))
+        .clickable(onClick = onClick)
+        .padding(vertical = 8.dp, horizontal = 4.dp)
+        .testTag(testTag),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Box(
+      modifier =
+        Modifier
+          .size(48.dp)
+          .clip(RoundedCornerShape(14.dp))
+          .background(containerColor)
+          .border(1.dp, accentColor.copy(alpha = 0.65f), RoundedCornerShape(14.dp)),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+        imageVector = icon,
+        contentDescription = label,
+        tint = Color.White,
+        modifier = Modifier.size(24.dp),
+      )
+    }
+    Text(
+      text = label,
+      style = MaterialTheme.typography.labelSmall,
+      color = Color.White,
+      fontWeight = FontWeight.Bold,
+      textAlign = TextAlign.Center,
+      maxLines = 2,
+      overflow = TextOverflow.Ellipsis,
+    )
+  }
+}
+
+@Composable
+private fun RecentContactChip(
+  contact: DemoContact,
+  accentColor: Color,
+  onClick: () -> Unit,
+) {
+  Column(
+    modifier =
+      Modifier
+        .width(82.dp)
+        .clip(RoundedCornerShape(16.dp))
+        .clickable(onClick = onClick)
+        .padding(vertical = 6.dp, horizontal = 4.dp)
+        .testTag("recent_contact_chip_${contact.id}"),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Box(
+      modifier =
+        Modifier
+          .size(50.dp)
+          .clip(CircleShape)
+          .background(accentColor.copy(alpha = 0.16f))
+          .border(1.2.dp, accentColor.copy(alpha = 0.7f), CircleShape),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text =
+          contact.name
+            .split(" ")
+            .take(2)
+            .joinToString("") { it.firstOrNull()?.uppercase() ?: "" },
+        style = MaterialTheme.typography.titleSmall,
+        color = accentColor,
+        fontWeight = FontWeight.ExtraBold,
+      )
+    }
+    Text(
+      text = contact.name.substringBefore(" "),
+      style = MaterialTheme.typography.labelMedium,
+      color = ZenTextPrimary,
+      fontWeight = FontWeight.SemiBold,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+    Text(
+      text = contact.mobileNumber.takeLast(5),
+      style = MaterialTheme.typography.labelSmall,
+      color = ZenTextMuted,
+      maxLines = 1,
+    )
   }
 }
 
