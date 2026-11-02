@@ -110,23 +110,8 @@ class MainActivity : ComponentActivity() {
 fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
   val flowUser by
     auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-  var manualUser by remember { mutableStateOf(auth.currentUser) }
-
-  LaunchedEffect(flowUser) {
-    manualUser = flowUser
-  }
-
-  val user = flowUser ?: manualUser
-
-  if (user == null) {
-    AuthScreen(
-      onAuthSuccess = {
-        manualUser = auth.currentUser
-      }
-    )
-  } else {
-    ZenrationMainShell(currentUserId = user.uid)
-  }
+  val activeUserId = flowUser?.uid ?: ZenrationRepository.DEFAULT_LOCAL_UID
+  ZenrationMainShell(currentUserId = activeUserId)
 }
 
 @Composable
@@ -144,7 +129,12 @@ fun ZenrationMainShell(currentUserId: String) {
             val databaseId = app.getString(R.string.firestore_database_id)
             val db = FirebaseFirestore.getInstance(databaseId)
             ZenrationViewModel(
-              repository = ZenrationRepository(db),
+              repository =
+                ZenrationRepository(
+                  db = db,
+                  auth = Firebase.auth,
+                  appContext = app.applicationContext,
+                ),
               currentUserId = currentUserId,
               voiceManager = VoiceAnnouncementManager(app),
             )
@@ -293,11 +283,8 @@ fun ZenrationMainShell(currentUserId: String) {
             },
             onAdjustDemoBalance = { newAmt -> viewModel.resetOrTopUpDemoBalance(newAmt) },
             onLogoutClick = {
-              signOut(
-                credentialManager = credentialManager,
-                onSignOutComplete = {},
-                scope = coroutineScope,
-              )
+              viewModel.resetOrTopUpDemoBalance(25000.0)
+              viewModel.selectTab(ZenBottomTab.HOME)
             },
           )
         }

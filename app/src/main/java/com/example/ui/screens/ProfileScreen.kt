@@ -713,7 +713,7 @@ fun ProfileScreen(
       }
     }
 
-    // 7. Logout Button
+    // 7. Reset Sandbox Session Button
     item {
       Button(
         onClick = onLogoutClick,
@@ -725,22 +725,22 @@ fun ProfileScreen(
         shape = RoundedCornerShape(16.dp),
         colors =
           ButtonDefaults.buttonColors(
-            containerColor = ZenErrorRed.copy(alpha = 0.16f),
-            contentColor = ZenErrorRed,
+            containerColor = ZenElectricBlue.copy(alpha = 0.14f),
+            contentColor = ZenElectricBlue,
           ),
-        border = BorderStroke(1.dp, ZenErrorRed.copy(alpha = 0.6f)),
+        border = BorderStroke(1.dp, ZenElectricBlue.copy(alpha = 0.6f)),
       ) {
         Icon(
-          imageVector = Icons.AutoMirrored.Filled.Logout,
-          contentDescription = "Logout from ZENRATION PAY",
-          tint = ZenErrorRed,
+          imageVector = Icons.Default.AccountBalanceWallet,
+          contentDescription = "Reset Sandbox Demo Balance",
+          tint = ZenElectricBlue,
         )
         Spacer(modifier = Modifier.width(10.dp))
         Text(
-          text = stringResource(R.string.logout),
+          text = "Reset Sandbox Demo Balance (₹25,000)",
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
-          color = ZenErrorRed,
+          color = ZenElectricBlue,
         )
       }
     }
