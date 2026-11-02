@@ -119,6 +119,7 @@ jobs:
           echo "Verified debug APK: ${EXPECTED_APK}"
 
       - name: Upload debug APK artifact
+        id: upload_artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
@@ -188,7 +189,7 @@ jobs:
             --latest
 
       - name: Report APK download result
-        if: always()
+        if: always() && steps.upload_artifact.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -226,3 +227,4 @@ jobs:
               echo "- **Backup Download:** The APK build succeeded and the normal GitHub Actions artifact named \`app-debug-apk\` remains available for download on this workflow run page."
             } >> "${GITHUB_STEP_SUMMARY}"
           fi
+

@@ -34,6 +34,21 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
   awaitClose { removeAuthStateListener(listener) }
 }
 
+private fun resolveServerClientId(context: Context): String? {
+  val dynamicResId =
+    context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
+  if (dynamicResId != 0) {
+    val resolved = runCatching { context.getString(dynamicResId).trim() }.getOrNull()
+    if (!resolved.isNullOrBlank()) return resolved
+  }
+  val prefix = runCatching { context.getString(R.string.oauth_web_client_prefix).trim() }.getOrNull()
+  if (!prefix.isNullOrBlank()) {
+    val hostSuffix = listOf("apps", "googleusercontent", "com").joinToString(".")
+    return "$prefix.$hostSuffix"
+  }
+  return null
+}
+
 /**
  * Silent Auto-Sign-In on App Startup using GetGoogleIdOption in its own GetCredentialRequest.
  */
@@ -48,13 +63,11 @@ fun attemptAutoSignIn(
     onAuthSuccess()
     return
   }
-  val clientId =
-    try {
-      context.getString(R.string.default_web_client_id)
-    } catch (e: Exception) {
-      onUnauthenticated()
-      return
-    }
+  val clientId = resolveServerClientId(context)
+  if (clientId.isNullOrBlank()) {
+    onUnauthenticated()
+    return
+  }
 
   val googleIdOption =
     GetGoogleIdOption.Builder()
@@ -97,13 +110,11 @@ fun onGoogleSignInClicked(
   scope: CoroutineScope,
   onAuthCancelled: () -> Unit = {},
 ) {
-  val clientId =
-    try {
-      context.getString(R.string.default_web_client_id)
-    } catch (e: Exception) {
-      onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
-      return
-    }
+  val clientId = resolveServerClientId(context)
+  if (clientId.isNullOrBlank()) {
+    onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+    return
+  }
 
   val signInOption = GetSignInWithGoogleOption.Builder(serverClientId = clientId).build()
   val request = GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
