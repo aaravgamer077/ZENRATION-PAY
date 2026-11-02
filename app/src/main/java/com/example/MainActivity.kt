@@ -91,6 +91,9 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -105,12 +108,22 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
-  val currentUser by
+  val flowUser by
     auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
-  val user = currentUser
+  var manualUser by remember { mutableStateOf(auth.currentUser) }
+
+  LaunchedEffect(flowUser) {
+    manualUser = flowUser
+  }
+
+  val user = flowUser ?: manualUser
 
   if (user == null) {
-    AuthScreen(onAuthSuccess = {})
+    AuthScreen(
+      onAuthSuccess = {
+        manualUser = auth.currentUser
+      }
+    )
   } else {
     ZenrationMainShell(currentUserId = user.uid)
   }
